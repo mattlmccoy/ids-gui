@@ -40,6 +40,16 @@ cd ~/Desktop/ids-gui
    npm run start
    ```
 
+## Windows Desktop Shortcut (Easy Launch)
+
+1. Make sure you have run `npm install` in the project folder at least once.
+2. Locate `run-app.bat` in the project folder.
+3. Right‑click `run-app.bat` → **Create shortcut**.
+4. Drag the new shortcut to your Desktop.
+5. Double‑click the shortcut to launch the app.
+
+Tip: Right‑click the shortcut → **Properties** → **Change Icon…** to customize it.
+
 ## Quick Start (Local Server + Chrome)
 
 1. Start a local server:
