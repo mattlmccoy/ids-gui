@@ -1,6 +1,6 @@
 # Radio Frequency AM Ink Delivery System
 
-Desktop UI for the Radio Frequency AM Ink Delivery System (derived from APS Engineering NANO_SINGLE_GUI_R17_RELEASE).
+Desktop UI for the Radio Frequency AM Ink Delivery System (derived from APS Engineering NANO_SINGLE_GUI_R17_RELEASE). This is for use with the APS Engineering NANO 700 system.
 
 ## Get The Files
 
