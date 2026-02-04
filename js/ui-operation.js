@@ -239,6 +239,7 @@ function buildHTML() {
             <div class="small mt-2" style="color:var(--text-muted)">
               Load fills inputs only; use Send to apply. Save exports current input values.
             </div>
+            <div class="small mt-1" style="color:var(--text-muted)" id="config-status"></div>
           </div>
         </div>
         <!-- Heaters -->
@@ -429,23 +430,35 @@ function bindEvents() {
 
   document.getElementById('btn-config-load')?.addEventListener('click', async () => {
     const input = document.getElementById('config-file-input');
-    if (!input || !input.files || input.files.length === 0) return;
+    const statusEl = document.getElementById('config-status');
+    if (!input) return;
+    if (!input.files || input.files.length === 0) {
+      input.click();
+      if (statusEl) statusEl.textContent = 'Select a config file to load.';
+      return;
+    }
     const file = input.files[0];
     const text = await file.text();
     let json;
-    try { json = JSON.parse(text); } catch (_) { return; }
+    try { json = JSON.parse(text); } catch (_) {
+      if (statusEl) statusEl.textContent = 'Invalid JSON file.';
+      return;
+    }
+    let appliedSettings = 0;
+    let appliedSetpoints = 0;
     if (json.settings) {
       for (const [key, val] of Object.entries(json.settings)) {
         const el = document.getElementById(`set-${key}`);
-        if (el) el.value = val;
+        if (el) { el.value = val; appliedSettings++; }
       }
     }
     if (json.setpoints) {
       for (const [key, val] of Object.entries(json.setpoints)) {
         const el = document.getElementById(`input-${key}`);
-        if (el) el.value = val;
+        if (el) { el.value = val; appliedSetpoints++; }
       }
     }
+    if (statusEl) statusEl.textContent = `Loaded ${appliedSettings} settings and ${appliedSetpoints} setpoints.`;
   });
 }
 
