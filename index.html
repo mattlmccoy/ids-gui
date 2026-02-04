@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Radio Frequency AM Ink Delivery System</title>
+  <!-- Serve via: python3 -m http.server 8080 -->
+
+  <!-- Inter Font (primary + fallback CDN) -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.bunny.net/css?family=inter:400,500,600,700" rel="stylesheet">
+  <!-- Bootstrap 5.3 CSS (local + CDN fallback) -->
+  <link href="vendor/bootstrap/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+        rel="stylesheet"
+        crossorigin="anonymous">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css"
+        rel="stylesheet"
+        crossorigin="anonymous"
+        referrerpolicy="no-referrer">
+  <!-- Bootstrap Icons (local + CDN fallback) -->
+  <link href="vendor/bootstrap-icons/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"
+        rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css"
+        rel="stylesheet"
+        crossorigin="anonymous"
+        referrerpolicy="no-referrer">
+  <!-- Custom styles -->
+  <link href="css/styles.css" rel="stylesheet">
+</head>
+<body>
+
+  <!-- Alarm Banner (hidden by default) -->
+  <div id="alarm-banner" class="alarm-banner d-none">
+    <div class="container-fluid d-flex align-items-center justify-content-between">
+      <span id="alarm-banner-text">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        <span id="alarm-banner-msg"></span>
+      </span>
+      <button type="button" class="btn btn-sm btn-outline-light" id="alarm-banner-dismiss">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- Navbar -->
+  <nav class="navbar navbar-expand-md bg-body-tertiary border-bottom">
+    <div class="container-fluid">
+      <span class="navbar-brand mb-0 h1">
+        <i class="bi bi-droplet-fill text-primary me-1"></i>
+        Radio Frequency AM Ink Delivery System
+      </span>
+      <div class="d-flex align-items-center gap-3">
+        <span id="system-id-badge" class="badge bg-secondary d-none"></span>
+        <span id="sw-rev-badge" class="badge bg-info text-dark d-none"></span>
+        <span id="connection-badge" class="connection-badge disconnected">
+          <i class="bi bi-circle-fill me-1"></i>
+          <span id="connection-status-text">Disconnected</span>
+        </span>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="theme-toggle" title="Toggle theme">
+          <i class="bi bi-moon-stars-fill" id="theme-toggle-icon"></i>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <div class="container-fluid mt-2">
+
+    <!-- Tab Navigation -->
+    <ul class="nav nav-tabs" id="mainTabs" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="tab-operation" data-bs-toggle="tab"
+                data-bs-target="#panel-operation" type="button" role="tab"
+                aria-controls="panel-operation" aria-selected="true">
+          <i class="bi bi-gear-fill me-1"></i>Operation
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="tab-monitor" data-bs-toggle="tab"
+                data-bs-target="#panel-monitor" type="button" role="tab"
+                aria-controls="panel-monitor" aria-selected="false">
+          <i class="bi bi-display me-1"></i>Monitor
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="tab-settings" data-bs-toggle="tab"
+                data-bs-target="#panel-settings" type="button" role="tab"
+                aria-controls="panel-settings" aria-selected="false">
+          <i class="bi bi-sliders me-1"></i>Settings
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="tab-trending" data-bs-toggle="tab"
+                data-bs-target="#panel-trending" type="button" role="tab"
+                aria-controls="panel-trending" aria-selected="false">
+          <i class="bi bi-graph-up me-1"></i>Trending
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="tab-log" data-bs-toggle="tab"
+                data-bs-target="#panel-log" type="button" role="tab"
+                aria-controls="panel-log" aria-selected="false">
+          <i class="bi bi-journal-text me-1"></i>Event Log
+        </button>
+      </li>
+    </ul>
+
+    <!-- Tab Content -->
+    <div class="tab-content mt-3" id="mainTabContent">
+
+      <!-- Operation Tab -->
+      <div class="tab-pane fade show active" id="panel-operation" role="tabpanel"
+           aria-labelledby="tab-operation">
+        <!-- Populated by ui-operation.js -->
+      </div>
+
+      <!-- Monitor Tab -->
+      <div class="tab-pane fade" id="panel-monitor" role="tabpanel"
+           aria-labelledby="tab-monitor">
+        <!-- Populated by ui-monitor.js -->
+      </div>
+
+      <!-- Settings Tab -->
+      <div class="tab-pane fade" id="panel-settings" role="tabpanel"
+           aria-labelledby="tab-settings">
+        <!-- Populated by ui-settings.js -->
+      </div>
+
+      <!-- Trending Tab -->
+      <div class="tab-pane fade" id="panel-trending" role="tabpanel"
+           aria-labelledby="tab-trending">
+        <!-- Populated by ui-charts.js -->
+      </div>
+
+      <!-- Event Log Tab -->
+      <div class="tab-pane fade" id="panel-log" role="tabpanel"
+           aria-labelledby="tab-log">
+        <!-- Populated by ui-log.js -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirmation Modal -->
+  <div class="modal fade" id="confirm-modal" tabindex="-1" aria-labelledby="confirm-modal-title"
+       aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="confirm-modal-title">Confirm Action</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body" id="confirm-modal-body">
+          Are you sure?
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-danger" id="confirm-modal-ok">Confirm</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Serial Port Picker Modal -->
+  <div class="modal fade" id="serial-modal" tabindex="-1" aria-labelledby="serial-modal-title"
+       aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="serial-modal-title">Select Serial Port</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="small text-muted mb-2">Choose the device to connect.</div>
+          <div class="list-group" id="serial-port-list"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="serial-modal-cancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="text-center text-muted small py-2 mt-3 border-top">
+    Derived from APS Engineering NANO_SINGLE_GUI_R17_RELEASE • M. McCoy • Georgia Institute of Technology
+  </footer>
+
+  <!-- CDN Scripts with fallback loader -->
+  <script>
+    (function () {
+      const loadScript = (src) => new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = src;
+        s.async = false;
+        s.onload = () => resolve(src);
+        s.onerror = () => reject(new Error('Failed: ' + src));
+        document.head.appendChild(s);
+      });
+
+      const loadFirst = async (sources) => {
+        for (const src of sources) {
+          try {
+            await loadScript(src);
+            return src;
+          } catch (err) {}
+        }
+        throw new Error('All sources failed: ' + sources.join(', '));
+      };
+
+      window.__depsReady = (async () => {
+        await loadFirst([
+          'vendor/bootstrap/bootstrap.bundle.min.js',
+          'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js',
+          'https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js'
+        ]);
+        await loadFirst([
+          'vendor/chartjs/chart.umd.min.js',
+          'https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js',
+          'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.7/chart.umd.min.js'
+        ]);
+        await loadFirst([
+          'vendor/chartjs-adapter-date-fns/chartjs-adapter-date-fns.bundle.min.js',
+          'https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js',
+          'https://cdnjs.cloudflare.com/ajax/libs/chartjs-adapter-date-fns/3.0.0/chartjs-adapter-date-fns.bundle.min.js'
+        ]);
+      })();
+    })();
+  </script>
+
+  <!-- App Entry Point -->
+  <script type="module">
+    await window.__depsReady;
+    await import('./js/app.js');
+  </script>
+</body>
+</html>

@@ -1,0 +1,47 @@
+{
+  "name": "rf-am-ink-delivery-system",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Radio Frequency AM Ink Delivery System UI",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "copy-vendor": "node scripts/copy-vendor.js",
+    "postinstall": "npm run copy-vendor",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "bootstrap": "^5.3.3",
+    "bootstrap-icons": "^1.11.3",
+    "chart.js": "^4.4.7",
+    "chartjs-adapter-date-fns": "^3.0.0"
+  },
+  "build": {
+    "appId": "edu.gatech.aps.rfam-ink-delivery",
+    "productName": "Radio Frequency AM Ink Delivery System",
+    "files": [
+      "index.html",
+      "css/**/*",
+      "js/**/*",
+      "vendor/**/*",
+      "main.js",
+      "preload.js",
+      "package.json"
+    ],
+    "asar": true,
+    "mac": {
+      "target": ["dmg", "zip"]
+    },
+    "win": {
+      "target": ["nsis", "zip"]
+    },
+    "linux": {
+      "target": ["AppImage", "deb"]
+    }
+  }
+}
