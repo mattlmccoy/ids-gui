@@ -35,6 +35,10 @@ cd ~/Desktop/ids-gui
    ```bash
    npm install
    ```
+2. Build the desktop app (required after install or updates):
+   ```bash
+   npm run dist
+   ```
 2. Run the app:
    ```bash
    npm run start
@@ -66,6 +70,8 @@ Notes:
 - If you skip the local server and open `index.html` directly, modules may not load.
 
 ## Build Installers (macOS / Windows / Linux)
+
+You must run this after any install or update:
 
 ```bash
 npm run dist
