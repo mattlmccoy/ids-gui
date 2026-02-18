@@ -3,6 +3,7 @@
 import store from './state.js';
 import { send } from './serial.js';
 import { flashSentButton } from './utils.js';
+import { loadNominalConfig } from './nominal-config.js';
 
 /* ---------- Settings Groups ---------- */
 const SETTINGS_GROUPS = [
@@ -56,6 +57,7 @@ export function initSettingsTab() {
   const panel = document.getElementById('panel-settings');
   panel.innerHTML = buildHTML();
   bindEvents();
+  initNominalSettings();
   store.on('data', autoPopulate);
 }
 
@@ -173,10 +175,6 @@ function autoPopulate(data) {
       const readEl = document.getElementById(`setval-${p.key}`);
       if (readEl && data[p.key] !== undefined) {
         readEl.textContent = data[p.key];
-        if (nominalSettings[p.key] === undefined) {
-          nominalSettings[p.key] = data[p.key];
-          refreshSettingChips(p.key);
-        }
       }
     }
   }
@@ -213,4 +211,17 @@ function refreshSettingChips(key) {
     el.textContent = v !== undefined ? v : '--';
     el.classList.toggle('muted', v === undefined);
   });
+}
+
+async function initNominalSettings() {
+  const nominal = await loadNominalConfig();
+  if (!nominal?.settings) return;
+  for (const group of SETTINGS_GROUPS) {
+    for (const p of group.params) {
+      const val = nominal.settings[p.key];
+      if (val === undefined) continue;
+      nominalSettings[p.key] = val;
+      refreshSettingChips(p.key);
+    }
+  }
 }

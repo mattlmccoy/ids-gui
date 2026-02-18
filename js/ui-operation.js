@@ -4,7 +4,9 @@ import store from './state.js';
 import { connect as serialConnect, disconnect as serialDisconnect, send } from './serial.js';
 import { flashSentButton } from './utils.js';
 import { decodeAlarmStatus, isActiveError } from './errors.js';
-import { CONFIRMATIONS } from './ui-dialogs.js';
+import { CONFIRMATIONS, confirm } from './ui-dialogs.js';
+import { getHeaterVisibility, setHeaterVisibility, isHeaterVisible, shouldSuppressHeaterError } from './heater-visibility.js';
+import { loadNominalConfig } from './nominal-config.js';
 
 /* ---------- Setpoint Definitions ---------- */
 const SETPOINTS = [
@@ -52,25 +54,41 @@ const FLOATS = [
 ];
 
 const HEATERS = [
-  { key: 'MainHeaterSSR_STATE', label: 'Main SSR' },
-  { key: 'AUXHeaterSSR_STATE',  label: 'Aux SSR' },
+  { name: 'MainHeater', key: 'MainHeaterSSR_STATE', tempKey: 'MainHeaterTemperature_STATE', label: 'Main SSR', kpiId: 'kpi-main-heater' },
+  { name: 'AuxHeater', key: 'AUXHeaterSSR_STATE', tempKey: 'AUXHeaterTemperature_STATE', label: 'Aux SSR', kpiId: 'kpi-aux-heater' },
 ];
+
+let configLoaded = false;
+let configLoading = false;
+let dismissedAlarmRaw = null;
 
 export function initOperationTab() {
   const panel = document.getElementById('panel-operation');
   panel.innerHTML = buildHTML();
   bindEvents();
+  initNominalSetpoints();
   store.on('data', updateDisplay);
   store.on('connection', updateConnectionUI);
   store.on('error', updateAlarmBanner);
+  store.on('heater-visibility', () => {
+    applyHeaterVisibilityUI();
+    if (store.alarmRaw) updateErrorCard(store.alarmRaw);
+    updateAlarmBanner({ raw: store.alarmRaw || '' });
+  });
 }
 
 const modeCache = {
   Purge_MODE: null,
   Flush_MODE: null,
   Drain_MODE: null,
-  Service_MODE: null,
   Bypass_MODE: null
+};
+
+const MODE_TIP_TEXT = {
+  purge: 'Purge: clears/recirculates fluid in the line path while stopped. Use this to prep/clear lines before or after operation.',
+  flush: 'Flush: runs the cleaning path with flush hardware (flush pump/valve). Best used with the system stopped for maintenance cleaning.',
+  drain: 'Drain: routes fluid to waste and empties the system path using drain hardware. Use before service or shutdown cleanup.',
+  bypass: 'Bypass: directly opens the bypass valve path, independent of Purge/Flush/Drain toggles.'
 };
 
 function buildHTML() {
@@ -79,32 +97,33 @@ function buildHTML() {
   return `
     <!-- Row 1: KPI Tiles — at-a-glance readings -->
     <div class="kpi-grid mb-3">
-      <div class="kpi-tile">
+      <div class="kpi-tile" id="kpi-tile-fluid">
         <span class="kpi-label">Fluid Temp</span>
         <span class="kpi-value" id="kpi-fluid-temp" style="color:var(--accent-blue)">--</span>
         <span class="kpi-unit">\u00B0C</span>
       </div>
-      <div class="kpi-tile">
+      <div class="kpi-tile" id="kpi-tile-main-heater">
         <span class="kpi-label">Main Heater</span>
         <span class="kpi-value" id="kpi-main-heater" style="color:var(--accent-orange)">--</span>
         <span class="kpi-unit">\u00B0C</span>
       </div>
-      <div class="kpi-tile">
+      <div class="kpi-tile" id="kpi-tile-aux-heater">
         <span class="kpi-label">Aux Heater</span>
         <span class="kpi-value" id="kpi-aux-heater" style="color:var(--accent-amber)">--</span>
         <span class="kpi-unit">\u00B0C</span>
       </div>
-      <div class="kpi-tile">
+      <div class="kpi-tile" id="kpi-tile-vacuum">
         <span class="kpi-label">Vacuum</span>
         <span class="kpi-value" id="kpi-vacuum" style="color:var(--accent-cyan)">--</span>
         <span class="kpi-unit">cmH\u2082O</span>
+        <span class="kpi-unit" id="kpi-vacuum-target-map">SP: --</span>
       </div>
-      <div class="kpi-tile">
+      <div class="kpi-tile" id="kpi-tile-pressure">
         <span class="kpi-label">Pressure</span>
         <span class="kpi-value" id="kpi-pressure" style="color:var(--accent-purple)">--</span>
         <span class="kpi-unit">psi</span>
       </div>
-      <div class="kpi-tile">
+      <div class="kpi-tile" id="kpi-tile-status">
         <span class="kpi-label">Status</span>
         <span class="kpi-value" id="kpi-status" style="font-size:1rem;color:var(--text-muted)">--</span>
         <span class="kpi-unit" id="kpi-error-code">&nbsp;</span>
@@ -113,6 +132,7 @@ function buildHTML() {
         <span class="kpi-label">Active Error</span>
         <span class="kpi-value" id="kpi-error-title" style="font-size:0.95rem;color:var(--text-muted)">--</span>
         <span class="kpi-unit" id="kpi-error-detail">&nbsp;</span>
+        <button class="btn-control btn-disconnect mt-1 align-self-start" id="btn-error-dismiss" style="padding:0.2rem 0.5rem;font-size:0.72rem" disabled>Dismiss</button>
       </div>
     </div>
 
@@ -149,23 +169,31 @@ function buildHTML() {
               <div class="d-flex gap-1">
                 <button class="btn-control btn-mode-on" id="btn-purge-on" disabled>Purge ON</button>
                 <button class="btn-control btn-mode-off" id="btn-purge-off" disabled>OFF</button>
+                <button class="btn-control btn-disconnect mode-help-btn" type="button" data-mode-tip
+                        title="${MODE_TIP_TEXT.purge}"
+                        style="padding:0.3rem 0.45rem;font-size:0.72rem">?</button>
               </div>
               <div class="d-flex gap-1">
                 <button class="btn-control btn-mode-on" id="btn-flush-on" disabled>Flush ON</button>
                 <button class="btn-control btn-mode-off" id="btn-flush-off" disabled>OFF</button>
+                <button class="btn-control btn-disconnect mode-help-btn" type="button" data-mode-tip
+                        title="${MODE_TIP_TEXT.flush}"
+                        style="padding:0.3rem 0.45rem;font-size:0.72rem">?</button>
               </div>
               <div class="d-flex gap-1">
                 <button class="btn-control btn-mode-on" id="btn-drain-on" disabled>Drain ON</button>
                 <button class="btn-control btn-mode-off" id="btn-drain-off" disabled>OFF</button>
+                <button class="btn-control btn-disconnect mode-help-btn" type="button" data-mode-tip
+                        title="${MODE_TIP_TEXT.drain}"
+                        style="padding:0.3rem 0.45rem;font-size:0.72rem">?</button>
               </div>
               <span style="width:1px;background:var(--border-color)"></span>
               <div class="d-flex gap-1">
-                <button class="btn-control btn-mode-on" id="btn-service-on" disabled>Service</button>
-                <button class="btn-control btn-mode-off" id="btn-service-off" disabled>OFF</button>
-              </div>
-              <div class="d-flex gap-1">
                 <button class="btn-control btn-mode-on" id="btn-bypass-on" disabled>Bypass</button>
                 <button class="btn-control btn-mode-off" id="btn-bypass-off" disabled>OFF</button>
+                <button class="btn-control btn-disconnect mode-help-btn" type="button" data-mode-tip
+                        title="${MODE_TIP_TEXT.bypass}"
+                        style="padding:0.3rem 0.45rem;font-size:0.72rem">?</button>
               </div>
             </div>
           </div>
@@ -235,11 +263,20 @@ function buildHTML() {
               <input type="file" id="config-file-input" accept="application/json" class="form-control form-control-sm" style="max-width:260px">
               <button class="btn-control btn-connect" id="btn-config-load">Load Config</button>
               <button class="btn-control btn-run" id="btn-config-save">Save Config</button>
+              <button class="btn-control btn-disconnect" id="btn-config-send-all" disabled>Send All</button>
+              <button class="btn-control btn-stop" id="btn-config-nominal">Load Nominal + Send</button>
             </div>
             <div class="small mt-2" style="color:var(--text-muted)">
-              Load fills inputs only; use Send to apply. Save exports current input values.
+              'Load' fills inputs. 'Send' or 'Send All' applies values to the controller. 'Save' exports current input values.
             </div>
             <div class="small mt-1" style="color:var(--text-muted)" id="config-status"></div>
+            <div class="small mt-1 d-none" id="send-all-progress-wrap" style="color:var(--text-muted)">
+              <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+              <span id="send-all-progress-text">Sending values...</span>
+            </div>
+            <div class="progress mt-1 d-none" id="send-all-progress-track" style="height:6px;max-width:360px">
+              <div class="progress-bar progress-bar-striped progress-bar-animated" id="send-all-progress-bar" role="progressbar" style="width:0%"></div>
+            </div>
           </div>
         </div>
         <!-- Heaters -->
@@ -247,9 +284,10 @@ function buildHTML() {
           <div class="card-header"><i class="bi bi-fire me-1"></i> Heaters</div>
           <div class="card-body" style="padding:0.5rem 1rem">
             ${HEATERS.map(h => `
-              <div class="indicator-row">
+              <div class="indicator-row heater-row" id="heater-row-${h.name}">
                 <span class="state-dot off" id="ind-${h.key}"></span>
                 <span class="ind-label">${h.label}</span>
+                <button class="btn-control btn-disconnect btn-heater-toggle" id="btn-heater-toggle-${h.name}" data-heater="${h.name}" style="padding:0.2rem 0.5rem;font-size:0.7rem">Hide</button>
               </div>
             `).join('')}
           </div>
@@ -301,6 +339,8 @@ function buildHTML() {
 /* ---------- Event Binding ---------- */
 
 function bindEvents() {
+  initModeTooltips();
+
   document.getElementById('btn-connect').addEventListener('click', () => serialConnect());
   document.getElementById('btn-disconnect').addEventListener('click', () => serialDisconnect());
 
@@ -315,6 +355,10 @@ function bindEvents() {
   });
 
   document.getElementById('btn-purge-on').addEventListener('click', async () => {
+    if (isRunModeActive()) {
+      setModeStatusMessage('Purge cannot be enabled while Run is active. Stop first (firmware auto-clears Purge_MODE in Run).');
+      return;
+    }
     if (await CONFIRMATIONS.purgeOn()) {
       modeCache.Purge_MODE = 1;
       applyModeButtons('Purge_MODE');
@@ -328,6 +372,10 @@ function bindEvents() {
     send('{"Purge_MODE":"0"}'); store.log('command', 'Purge OFF');
   });
   document.getElementById('btn-flush-on').addEventListener('click', async () => {
+    if (isRunModeActive()) {
+      setModeStatusMessage('Flush cannot be enabled while Run is active. Stop first (firmware auto-clears Flush_MODE in Run).');
+      return;
+    }
     if (await CONFIRMATIONS.flushOn()) {
       modeCache.Flush_MODE = 1;
       applyModeButtons('Flush_MODE');
@@ -341,6 +389,10 @@ function bindEvents() {
     send('{"Flush_MODE":"0"}'); store.log('command', 'Flush OFF');
   });
   document.getElementById('btn-drain-on').addEventListener('click', async () => {
+    if (isRunModeActive()) {
+      setModeStatusMessage('Drain cannot be enabled while Run is active. Stop first (firmware auto-clears Drain_MODE in Run).');
+      return;
+    }
     if (await CONFIRMATIONS.drainOn()) {
       modeCache.Drain_MODE = 1;
       applyModeButtons('Drain_MODE');
@@ -354,16 +406,6 @@ function bindEvents() {
     send('{"Drain_MODE":"0"}'); store.log('command', 'Drain OFF');
   });
 
-  document.getElementById('btn-service-on').addEventListener('click', () => {
-    modeCache.Service_MODE = 1;
-    applyModeButtons('Service_MODE');
-    send('{"Service_MODE":"1"}'); store.log('command', 'Service mode ON');
-  });
-  document.getElementById('btn-service-off').addEventListener('click', () => {
-    modeCache.Service_MODE = 0;
-    applyModeButtons('Service_MODE');
-    send('{"Service_MODE":"0"}'); store.log('command', 'Service mode OFF');
-  });
   document.getElementById('btn-bypass-on').addEventListener('click', () => {
     modeCache.Bypass_MODE = 1;
     applyModeButtons('Bypass_MODE');
@@ -374,6 +416,13 @@ function bindEvents() {
     applyModeButtons('Bypass_MODE');
     send('{"Bypass_MODE":"0"}'); store.log('command', 'Bypass mode OFF');
   });
+
+  const sendAllBtn = document.getElementById('btn-config-send-all');
+  if (sendAllBtn) {
+    sendAllBtn.addEventListener('click', async () => {
+      await sendAllConfigValues(sendAllBtn);
+    });
+  }
 
   document.querySelectorAll('.btn-send-sp').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -428,38 +477,59 @@ function bindEvents() {
     URL.revokeObjectURL(url);
   });
 
-  document.getElementById('btn-config-load')?.addEventListener('click', async () => {
-    const input = document.getElementById('config-file-input');
-    const statusEl = document.getElementById('config-status');
-    if (!input) return;
-    if (!input.files || input.files.length === 0) {
-      input.click();
-      if (statusEl) statusEl.textContent = 'Select a config file to load.';
+  const configInput = document.getElementById('config-file-input');
+  const configLoadBtn = document.getElementById('btn-config-load');
+  const statusEl = document.getElementById('config-status');
+  configLoadBtn?.addEventListener('click', () => {
+    if (!configInput) return;
+    if (configInput.files && configInput.files.length > 0) {
+      loadConfigFile(configInput.files[0]);
       return;
     }
-    const file = input.files[0];
-    const text = await file.text();
-    let json;
-    try { json = JSON.parse(text); } catch (_) {
-      if (statusEl) statusEl.textContent = 'Invalid JSON file.';
-      return;
-    }
-    let appliedSettings = 0;
-    let appliedSetpoints = 0;
-    if (json.settings) {
-      for (const [key, val] of Object.entries(json.settings)) {
-        const el = document.getElementById(`set-${key}`);
-        if (el) { el.value = val; appliedSettings++; }
-      }
-    }
-    if (json.setpoints) {
-      for (const [key, val] of Object.entries(json.setpoints)) {
-        const el = document.getElementById(`input-${key}`);
-        if (el) { el.value = val; appliedSetpoints++; }
-      }
-    }
-    if (statusEl) statusEl.textContent = `Loaded ${appliedSettings} settings and ${appliedSetpoints} setpoints.`;
+    if (statusEl) statusEl.textContent = 'Select a config file to load.';
+    configInput.click();
   });
+  configInput?.addEventListener('change', async () => {
+    if (!configInput?.files?.length) return;
+    await loadConfigFile(configInput.files[0]);
+  });
+  document.getElementById('btn-config-nominal')?.addEventListener('click', async (e) => {
+    await loadNominalIntoInputsAndSend(e.currentTarget);
+  });
+
+  document.querySelectorAll('.btn-heater-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const heaterName = btn.dataset.heater;
+      if (!heaterName) return;
+      setHeaterVisibility(heaterName, !isHeaterVisible(heaterName));
+      applyHeaterVisibilityUI();
+      if (store.alarmRaw) updateErrorCard(store.alarmRaw);
+      updateAlarmBanner({ raw: store.alarmRaw || '' });
+    });
+  });
+
+  document.getElementById('btn-error-dismiss')?.addEventListener('click', async () => {
+    const raw = store.alarmRaw || '';
+    const { error } = decodeAlarmStatus(raw);
+    if (!isActiveError(error.code)) return;
+    const ok = await confirm(
+      'Dismiss Active Error',
+      `<p class="mb-1"><strong>${error.code} — ${error.title}</strong></p>` +
+      `<p class="mb-1">${error.detail}</p>` +
+      '<p class="text-warning mb-0">Dismiss hides this current error instance in the UI until the alarm state changes.</p>',
+      'Dismiss',
+      'btn-warning'
+    );
+    if (!ok) return;
+    dismissedAlarmRaw = raw;
+    store.log('info', `Dismissed active error instance (${error.code})`);
+    updateErrorCard(raw);
+    updateAlarmBanner({ raw });
+  });
+
+  applyHeaterVisibilityUI();
+  syncSendAllButton();
+  applyModeInterlocks();
 }
 
 /* ---------- Display Updates ---------- */
@@ -468,12 +538,17 @@ function updateDisplay(data) {
   // KPI tiles
   if (data.FluidTemperature_STATE !== undefined)
     document.getElementById('kpi-fluid-temp').textContent = parseFloat(data.FluidTemperature_STATE).toFixed(1);
-  if (data.MainHeaterTemperature_STATE !== undefined)
+  if (data.MainHeaterTemperature_STATE !== undefined && isHeaterVisible('MainHeater'))
     document.getElementById('kpi-main-heater').textContent = parseFloat(data.MainHeaterTemperature_STATE).toFixed(1);
-  if (data.AUXHeaterTemperature_STATE !== undefined)
+  if (data.AUXHeaterTemperature_STATE !== undefined && isHeaterVisible('AuxHeater'))
     document.getElementById('kpi-aux-heater').textContent = parseFloat(data.AUXHeaterTemperature_STATE).toFixed(1);
   if (data.Vacuum_STATE !== undefined)
     document.getElementById('kpi-vacuum').textContent = data.Vacuum_STATE;
+  const vacTargetEl = document.getElementById('kpi-vacuum-target-map');
+  if (vacTargetEl) {
+    const pct = data.Vacuum_SETPOINT;
+    vacTargetEl.textContent = pct === undefined ? 'SP(raw): -- %' : `SP(raw): ${pct}%`;
+  }
   if (data.Pressure_STATE !== undefined)
     document.getElementById('kpi-pressure').textContent = data.Pressure_STATE;
 
@@ -482,10 +557,6 @@ function updateDisplay(data) {
     const el = document.getElementById(`val-${sp.key}`);
     if (el && data[sp.key] !== undefined) {
       el.textContent = data[sp.key];
-      if (nominalSetpoints[sp.key] === undefined) {
-        nominalSetpoints[sp.key] = data[sp.key];
-        refreshValueChips(sp.key);
-      }
     }
   }
 
@@ -499,12 +570,17 @@ function updateDisplay(data) {
   for (const h of HEATERS) {
     const el = document.getElementById(`ind-${h.key}`);
     if (!el || data[h.key] === undefined) continue;
+    if (!isHeaterVisible(h.name)) {
+      el.className = 'state-dot off';
+      continue;
+    }
     el.className = 'state-dot ' + (parseInt(data[h.key]) === 1 ? 'heat' : 'off');
   }
 
   // Error / status
   if (data.ErrorCode_STATE !== undefined || data.AlarmStatus !== undefined) {
     const raw = data.AlarmStatus ?? data.ErrorCode_STATE ?? '';
+    if (dismissedAlarmRaw && raw !== dismissedAlarmRaw) dismissedAlarmRaw = null;
     updateErrorCard(raw);
   }
 
@@ -512,8 +588,9 @@ function updateDisplay(data) {
   applyModeButtons('Purge_MODE', data);
   applyModeButtons('Flush_MODE', data);
   applyModeButtons('Drain_MODE', data);
-  applyModeButtons('Service_MODE', data);
   applyModeButtons('Bypass_MODE', data);
+  applyModeInterlocks(data);
+  applyHeaterVisibilityUI();
 }
 
 function pushHistory(map, key, val) {
@@ -545,6 +622,7 @@ function updateErrorCard(raw) {
   const kpiErrorTitle = document.getElementById('kpi-error-title');
   const kpiErrorDetail = document.getElementById('kpi-error-detail');
   const kpiErrorCard = document.getElementById('kpi-error-card');
+  const dismissBtn = document.getElementById('btn-error-dismiss');
 
   // Op status badge
   if (opStatus) {
@@ -560,22 +638,29 @@ function updateErrorCard(raw) {
     kpiStatus.textContent = raw || '--';
   }
 
-  if (isActiveError(error.code)) {
+  const isDismissed = dismissedAlarmRaw && raw === dismissedAlarmRaw;
+  const isSuppressed = shouldSuppressHeaterError(error.code, raw);
+  if (isActiveError(error.code) && !isSuppressed && !isDismissed) {
     kpiError.textContent = error.code;
     kpiError.style.color = 'var(--accent-red)';
     if (kpiErrorTitle) kpiErrorTitle.textContent = `${error.code} \u2014 ${error.title}`;
     if (kpiErrorDetail) kpiErrorDetail.textContent = error.action || error.detail || '';
     if (kpiErrorTitle) kpiErrorTitle.style.color = 'var(--accent-red)';
     if (kpiErrorCard) {
-      kpiErrorCard.classList.remove('severity-info', 'severity-warning', 'severity-critical');
+      kpiErrorCard.classList.remove('severity-info', 'severity-warning', 'severity-critical', 'severity-ok');
       kpiErrorCard.classList.add(`severity-${error.severity || 'critical'}`);
     }
+    if (dismissBtn) dismissBtn.disabled = false;
   } else {
     kpiError.innerHTML = '&nbsp;';
     kpiError.style.color = '';
-    if (kpiErrorTitle) { kpiErrorTitle.textContent = '--'; kpiErrorTitle.style.color = 'var(--text-muted)'; }
-    if (kpiErrorDetail) kpiErrorDetail.innerHTML = '&nbsp;';
-    if (kpiErrorCard) kpiErrorCard.classList.remove('severity-info', 'severity-warning', 'severity-critical');
+    if (kpiErrorTitle) { kpiErrorTitle.textContent = 'No Active Errors'; kpiErrorTitle.style.color = 'var(--accent-green)'; }
+    if (kpiErrorDetail) kpiErrorDetail.textContent = 'No active alarms detected. Happy printing :)';
+    if (kpiErrorCard) {
+      kpiErrorCard.classList.remove('severity-info', 'severity-warning', 'severity-critical');
+      kpiErrorCard.classList.add('severity-ok');
+    }
+    if (dismissBtn) dismissBtn.disabled = true;
   }
 }
 
@@ -588,13 +673,36 @@ function updateConnectionUI(state) {
     'btn-run', 'btn-stop', 'btn-reboot',
     'btn-purge-on', 'btn-purge-off', 'btn-flush-on', 'btn-flush-off',
     'btn-drain-on', 'btn-drain-off',
-    'btn-service-on', 'btn-service-off', 'btn-bypass-on', 'btn-bypass-off'
+    'btn-bypass-on', 'btn-bypass-off'
   ];
   btns.forEach(id => {
     const el = document.getElementById(id);
     if (el) el.disabled = !connected;
   });
   document.querySelectorAll('.btn-send-sp').forEach(btn => btn.disabled = !connected);
+  syncSendAllButton();
+  applyModeInterlocks();
+}
+
+function isRunModeActive(data = null) {
+  const value = data && data.Run_MODE !== undefined ? data.Run_MODE : store.data?.Run_MODE;
+  return parseInt(value, 10) === 1;
+}
+
+function setModeStatusMessage(message) {
+  const statusEl = document.getElementById('config-status');
+  if (statusEl) statusEl.textContent = message;
+}
+
+function applyModeInterlocks(data = null) {
+  const connected = store.connection === 'CONNECTED';
+  const running = isRunModeActive(data);
+  const onButtonsToGate = ['btn-purge-on', 'btn-flush-on', 'btn-drain-on'];
+  onButtonsToGate.forEach(id => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.disabled = !connected || running;
+  });
 }
 
 function applyModeButtons(modeKey, data = null) {
@@ -627,12 +735,306 @@ function updateAlarmBanner(payload) {
   const banner = document.getElementById('alarm-banner');
   const msg = document.getElementById('alarm-banner-msg');
   const { error } = decodeAlarmStatus(payload.raw);
+  const isDismissed = dismissedAlarmRaw && payload.raw === dismissedAlarmRaw;
 
-  if (isActiveError(error.code)) {
+  if (isActiveError(error.code) && !shouldSuppressHeaterError(error.code, payload.raw) && !isDismissed) {
     banner.className = `alarm-banner severity-${error.severity}`;
     msg.textContent = `${error.title}: ${error.detail}`;
     banner.classList.remove('d-none');
   } else {
     banner.classList.add('d-none');
   }
+}
+
+async function loadConfigFile(file) {
+  const statusEl = document.getElementById('config-status');
+  if (configLoading) return;
+  configLoading = true;
+  const startedAt = Date.now();
+  if (statusEl) statusEl.textContent = `Loading ${file.name}...`;
+  try {
+    let json;
+    try {
+      const text = await file.text();
+      json = JSON.parse(text);
+    } catch (_) {
+      await ensureMinLoadDisplay(startedAt);
+      if (statusEl) statusEl.textContent = 'Invalid JSON file.';
+      return;
+    }
+
+    let appliedSettings = 0;
+    let appliedSetpoints = 0;
+    if (json.settings) {
+      for (const [key, val] of Object.entries(json.settings)) {
+        const el = document.getElementById(`set-${key}`);
+        if (el) { el.value = val; appliedSettings++; }
+      }
+    }
+    if (json.setpoints) {
+      for (const [key, val] of Object.entries(json.setpoints)) {
+        const el = document.getElementById(`input-${key}`);
+        if (el) { el.value = val; appliedSetpoints++; }
+      }
+    }
+
+    configLoaded = (appliedSettings + appliedSetpoints) > 0;
+    syncSendAllButton();
+    await ensureMinLoadDisplay(startedAt);
+    if (statusEl) statusEl.textContent = configLoaded
+      ? `Loaded ${file.name}: ${appliedSettings} settings and ${appliedSetpoints} setpoints.`
+      : 'Loaded file had no recognized settings/setpoints.';
+  } finally {
+    configLoading = false;
+  }
+}
+
+async function sendAllConfigValues(buttonEl) {
+  const statusEl = document.getElementById('config-status');
+  if (store.connection !== 'CONNECTED') {
+    if (statusEl) statusEl.textContent = 'Connect to the controller before using Send All.';
+    return;
+  }
+
+  const payloads = collectConfigInputs();
+  if (payloads.length === 0) {
+    if (statusEl) statusEl.textContent = 'No setpoint/setting values available to send.';
+    return;
+  }
+
+  await sendValueEntries(payloads, buttonEl, buttonEl?.textContent?.trim() || 'Send All');
+}
+
+async function sendValueEntries(payloads, buttonEl, restoreLabel = 'Send All') {
+  const statusEl = document.getElementById('config-status');
+  if (!payloads || payloads.length === 0) return;
+
+  const startedAt = Date.now();
+  setSendAllProgress(0, payloads.length, 'Sending values...');
+  buttonEl.disabled = true;
+
+  let sentCount = 0;
+  let failedCount = 0;
+  try {
+    const combinedPayload = Object.fromEntries(payloads.map(({ key, value }) => [key, String(value)]));
+    const combinedOk = await send(JSON.stringify(combinedPayload));
+    setSendAllProgress(payloads.length, payloads.length, `Applying ${payloads.length} values...`);
+    await delay(60);
+
+    const failed = [];
+    for (let idx = 0; idx < payloads.length; idx++) {
+      const { key, value } = payloads[idx];
+      const reflected = await waitForReadback(key, value, 350);
+      if (reflected) sentCount++;
+      else failed.push({ key, value });
+      setSendAllProgress(idx + 1, payloads.length, `Verifying ${idx + 1}/${payloads.length}...`);
+    }
+
+    for (let idx = 0; idx < failed.length; idx++) {
+      const { key, value } = failed[idx];
+      const ok = await send(`{"${key}":"${value}"}`);
+      await delay(20);
+      const reflected = ok ? await waitForReadback(key, value, 500) : false;
+      if (reflected) sentCount++;
+      else failedCount++;
+      setSendAllProgress(payloads.length, payloads.length, `Retrying ${idx + 1}/${failed.length} failed values...`);
+    }
+
+    if (!combinedOk && failed.length === 0) {
+      failedCount = payloads.length;
+      sentCount = 0;
+    }
+  } finally {
+    const minDisplayMs = 350;
+    const elapsed = Date.now() - startedAt;
+    if (elapsed < minDisplayMs) await delay(minDisplayMs - elapsed);
+    setSendAllProgress(0, 0, '', true);
+    syncSendAllButton();
+  }
+
+  if (sentCount > 0) {
+    flashSentButton(buttonEl, restoreLabel);
+    store.log('command', `Send All applied ${sentCount} values`);
+  }
+  if (failedCount > 0) {
+    store.log('warning', `Send All had ${failedCount} failed writes`);
+  }
+  if (statusEl) statusEl.textContent = failedCount === 0
+    ? `Sent ${sentCount} settings/setpoints to controller.`
+    : `Sent ${sentCount} values, ${failedCount} failed.`;
+}
+
+function collectConfigInputs() {
+  const payloadByKey = new Map();
+  document.querySelectorAll('[id^="set-"]').forEach(input => {
+    const key = input.id.replace('set-', '');
+    const value = input.value?.trim();
+    if (value) payloadByKey.set(key, value);
+  });
+  document.querySelectorAll('[id^="input-"]').forEach(input => {
+    const key = input.id.replace('input-', '');
+    const value = input.value?.trim();
+    if (value) payloadByKey.set(key, value);
+  });
+  return Array.from(payloadByKey.entries()).map(([key, value]) => ({ key, value }));
+}
+
+function syncSendAllButton() {
+  const sendAllBtn = document.getElementById('btn-config-send-all');
+  if (!sendAllBtn) return;
+  sendAllBtn.disabled = !(configLoaded && store.connection === 'CONNECTED');
+}
+
+function applyHeaterVisibilityUI() {
+  const visibility = getHeaterVisibility();
+  for (const h of HEATERS) {
+    const visible = !!visibility[h.name];
+    const row = document.getElementById(`heater-row-${h.name}`);
+    const btn = document.getElementById(`btn-heater-toggle-${h.name}`);
+    const kpi = document.getElementById(h.kpiId);
+    const kpiTile = document.getElementById(`kpi-tile-${h.name === 'MainHeater' ? 'main-heater' : 'aux-heater'}`);
+    if (row) row.classList.toggle('heater-row-hidden', !visible);
+    if (btn) {
+      btn.textContent = visible ? 'Hide' : 'Show';
+      btn.classList.toggle('btn-connect', !visible);
+      btn.classList.toggle('btn-disconnect', visible);
+    }
+    if (kpi && !visible) {
+      kpi.textContent = '--';
+      kpi.classList.add('kpi-muted');
+    } else if (kpi) {
+      kpi.classList.remove('kpi-muted');
+    }
+    if (kpiTile) {
+      kpiTile.classList.toggle('kpi-disabled', !visible);
+      kpiTile.style.order = visible ? (h.name === 'MainHeater' ? '2' : '3') : (h.name === 'MainHeater' ? '92' : '93');
+    }
+  }
+}
+
+async function initNominalSetpoints() {
+  const nominal = await loadNominalConfig();
+  if (!nominal?.setpoints) return;
+  for (const sp of SETPOINTS) {
+    const val = nominal.setpoints[sp.key];
+    if (val === undefined) continue;
+    nominalSetpoints[sp.key] = val;
+    refreshValueChips(sp.key);
+  }
+}
+
+async function loadNominalIntoInputsAndSend(buttonEl) {
+  const statusEl = document.getElementById('config-status');
+  const nominal = await loadNominalConfig();
+  if (!nominal) {
+    if (statusEl) statusEl.textContent = 'No nominal-config available.';
+    return;
+  }
+
+  let loaded = 0;
+  const nominalEntries = [];
+  for (const [key, val] of Object.entries(nominal.settings || {})) {
+    const el = document.getElementById(`set-${key}`);
+    if (el) {
+      el.value = val;
+      loaded++;
+      nominalEntries.push({ key, value: String(val) });
+    }
+  }
+  for (const [key, val] of Object.entries(nominal.setpoints || {})) {
+    const el = document.getElementById(`input-${key}`);
+    if (el) {
+      el.value = val;
+      loaded++;
+      nominalEntries.push({ key, value: String(val) });
+    }
+  }
+  configLoaded = loaded > 0;
+  syncSendAllButton();
+  if (statusEl) statusEl.textContent = `Loaded ${loaded} nominal values into inputs.`;
+
+  if (store.connection !== 'CONNECTED') {
+    if (statusEl) statusEl.textContent += ' Connect to controller, then click Send All.';
+    return;
+  }
+
+  const btn = buttonEl || document.getElementById('btn-config-send-all');
+  await sendValueEntries(nominalEntries, btn, btn?.textContent?.trim() || 'Send All');
+}
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function ensureMinLoadDisplay(startedAtMs) {
+  const minMs = 180;
+  const elapsed = Date.now() - startedAtMs;
+  if (elapsed < minMs) await delay(minMs - elapsed);
+}
+
+async function waitForReadback(key, expected, timeoutMs) {
+  const want = String(expected);
+  if (store.data && store.data[key] !== undefined && valuesEquivalent(store.data[key], want)) return true;
+
+  return new Promise(resolve => {
+    const timer = setTimeout(() => {
+      off?.();
+      resolve(false);
+    }, timeoutMs);
+
+    const off = store.on('data', data => {
+      if (data[key] === undefined) return;
+      if (!valuesEquivalent(data[key], want)) return;
+      clearTimeout(timer);
+      off?.();
+      resolve(true);
+    });
+  });
+}
+
+function valuesEquivalent(actual, expected) {
+  const a = String(actual).trim();
+  const e = String(expected).trim();
+  if (a === e) return true;
+  const an = Number(a);
+  const en = Number(e);
+  if (Number.isFinite(an) && Number.isFinite(en)) {
+    return Math.abs(an - en) < 0.0001;
+  }
+  return false;
+}
+
+function initModeTooltips() {
+  if (typeof bootstrap === 'undefined' || !bootstrap.Tooltip) return;
+  document.querySelectorAll('[data-mode-tip]').forEach(el => {
+    try { bootstrap.Tooltip.getInstance(el)?.dispose(); } catch (_) { /* ignore */ }
+    new bootstrap.Tooltip(el, {
+      trigger: 'hover focus',
+      placement: 'top',
+      container: 'body'
+    });
+  });
+}
+
+function setSendAllProgress(current, total, label, clear = false) {
+  const wrap = document.getElementById('send-all-progress-wrap');
+  const track = document.getElementById('send-all-progress-track');
+  const bar = document.getElementById('send-all-progress-bar');
+  const text = document.getElementById('send-all-progress-text');
+  if (!wrap || !track || !bar || !text) return;
+
+  if (clear) {
+    wrap.classList.add('d-none');
+    track.classList.add('d-none');
+    bar.style.width = '0%';
+    bar.setAttribute('aria-valuenow', '0');
+    return;
+  }
+
+  const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+  wrap.classList.remove('d-none');
+  track.classList.remove('d-none');
+  text.textContent = label || 'Working...';
+  bar.style.width = `${pct}%`;
+  bar.setAttribute('aria-valuenow', String(pct));
 }

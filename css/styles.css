@@ -210,6 +210,11 @@ html, body {
   border-color: rgba(248,113,113,0.7);
   background: linear-gradient(180deg, rgba(248,113,113,0.16), rgba(248,113,113,0.04));
 }
+.kpi-tile.kpi-error.severity-ok {
+  border-color: rgba(52,211,153,0.75);
+  box-shadow: 0 0 0 1px rgba(52,211,153,0.35);
+  background: linear-gradient(180deg, rgba(52,211,153,0.15), rgba(52,211,153,0.05));
+}
 
 .kpi-tile {
   background: var(--bg-card);
@@ -238,6 +243,19 @@ html, body {
   color: var(--text-muted);
   font-weight: 400;
 }
+.kpi-tile.kpi-disabled {
+  opacity: 0.6;
+  border-style: dashed;
+  border-color: rgba(107, 114, 128, 0.7);
+  background: rgba(107, 114, 128, 0.08);
+}
+#kpi-tile-fluid { order: 1; }
+#kpi-tile-main-heater { order: 2; }
+#kpi-tile-aux-heater { order: 3; }
+#kpi-tile-vacuum { order: 4; }
+#kpi-tile-pressure { order: 5; }
+#kpi-tile-status { order: 6; }
+#kpi-error-card { order: 7; }
 
 /* ---------- State Indicators ---------- */
 .state-dot {
@@ -275,6 +293,12 @@ html, body {
   font-family: 'SF Mono', 'Consolas', monospace;
   font-weight: 600;
   color: var(--text-primary);
+}
+.heater-row-hidden {
+  opacity: 0.45;
+}
+.kpi-muted {
+  color: var(--text-muted) !important;
 }
 
 /* ---------- Control Buttons ---------- */
@@ -514,6 +538,17 @@ html, body {
 .log-row-warning { background: rgba(251,191,36,0.06) !important; }
 .log-row-info    { background: transparent !important; }
 .log-row-command { background: rgba(52,211,153,0.04) !important; }
+
+/* ---------- Ink Check ---------- */
+#panel-ink .form-label {
+  color: var(--text-secondary);
+}
+#ink-reminder-banner {
+  border-color: rgba(251,191,36,0.5);
+}
+.ink-baseline-row {
+  background: rgba(34, 211, 238, 0.08) !important;
+}
 
 /* ---------- Scrollbar ---------- */
 ::-webkit-scrollbar { width: 6px; height: 6px; }

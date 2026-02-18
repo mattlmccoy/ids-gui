@@ -3,12 +3,14 @@
 import store from './state.js';
 import { isSerialSupported } from './serial.js';
 import { decodeAlarmStatus, isActiveError } from './errors.js';
+import { shouldSuppressHeaterError } from './heater-visibility.js';
 import { initDialogs } from './ui-dialogs.js';
 import { initOperationTab } from './ui-operation.js';
 import { initMonitorTab } from './ui-monitor.js';
 import { initSettingsTab } from './ui-settings.js';
 import { initChartsTab } from './ui-charts.js';
 import { initLogTab } from './ui-log.js';
+import { initInkTab } from './ui-ink.js';
 import { initCSVExport, exportSessionCSV } from './csv-export.js';
 
 /* ---------- Boot ---------- */
@@ -36,6 +38,7 @@ function boot() {
   initSettingsTab();
   initChartsTab();
   initLogTab();
+  initInkTab();
   initCSVExport();
 
   // Wire up connection badge
@@ -171,7 +174,7 @@ function updatePageTitle(data) {
 
 function logErrorEvent(payload) {
   const { error } = decodeAlarmStatus(payload.raw);
-  if (isActiveError(error.code)) {
+  if (isActiveError(error.code) && !shouldSuppressHeaterError(error.code, payload.raw)) {
     if (error.code === lastLoggedErrorCode) return;
     lastLoggedErrorCode = error.code;
     const sev = error.severity === 'warning' ? 'warning' : (error.severity === 'info' ? 'info' : 'error');

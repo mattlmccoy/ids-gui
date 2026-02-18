@@ -1,6 +1,8 @@
 /* ===== ui-charts.js — Trending tab (Chart.js temperature + pressure graphs) ===== */
 
 import store from './state.js';
+import { isDataKeyVisible } from './heater-visibility.js';
+import { getPollIntervalMs, setPollIntervalMs, getNominalPollIntervalMs } from './serial.js';
 
 const MAX_POINTS = 3600;
 const TIME_WINDOWS = [
@@ -19,9 +21,9 @@ const TEMP_TRACES = [
 ];
 
 const PRESSURE_TRACES = [
-  { key: 'Vacuum_STATE',    label: 'Vacuum',       color: '#4c8dff' },
-  { key: 'Pressure_STATE',  label: 'Pressure',     color: '#f87171' },
-  { key: 'Vacuum_SETPOINT', label: 'Vac Setpoint', color: '#34d399', borderDash: [5, 5] },
+  { key: 'Vacuum_STATE',    label: 'Vacuum (cmH\u2082O)',      color: '#4c8dff', yAxisID: 'yVacuum' },
+  { key: 'Vacuum_SETPOINT', label: 'Vac Setpoint (% raw)',     color: '#34d399', borderDash: [5, 5], yAxisID: 'ySetpoint' },
+  { key: 'Pressure_STATE',  label: 'Pressure (psi)',           color: '#f87171', yAxisID: 'yPressure' },
 ];
 
 let dataBuffer = [];
@@ -29,6 +31,7 @@ let tempChart = null;
 let pressureChart = null;
 let paused = false;
 let windowMs = TIME_WINDOWS[1].ms;
+let maxObservedPressure = 0;
 
 export function initChartsTab() {
   const panel = document.getElementById('panel-trending');
@@ -36,6 +39,7 @@ export function initChartsTab() {
   createCharts();
   bindEvents();
   store.on('data', onData);
+  store.on('heater-visibility', refreshCharts);
 }
 
 function buildHTML() {
@@ -55,6 +59,11 @@ function buildHTML() {
       <button class="btn-control btn-reboot" id="btn-chart-clear" style="padding:0.25rem 0.6rem;font-size:0.75rem">
         <i class="bi bi-trash me-1"></i>Clear
       </button>
+      <span style="width:1px;height:20px;background:var(--border-color)"></span>
+      <span style="color:var(--text-secondary);font-weight:500;font-size:0.82rem">Data Poll (ms):</span>
+      <input type="number" id="poll-interval-ms" min="200" max="5000" step="50" class="form-control form-control-sm" style="width:92px">
+      <button class="btn-control btn-connect" id="btn-poll-apply" style="padding:0.25rem 0.6rem;font-size:0.75rem">Apply</button>
+      <button class="btn-control btn-disconnect" id="btn-poll-nominal" style="padding:0.25rem 0.6rem;font-size:0.75rem">Nominal</button>
       <span class="ms-auto" style="color:var(--text-muted);font-size:0.75rem" id="chart-point-count">0 points</span>
     </div>
     <div class="row g-3">
@@ -71,6 +80,9 @@ function buildHTML() {
           <div class="card-header"><i class="bi bi-speedometer me-1"></i> Pressure / Vacuum</div>
           <div class="card-body">
             <div class="chart-container"><canvas id="chart-pressure"></canvas></div>
+            <div class="small mt-2" style="color:var(--text-muted)">
+              Vacuum setpoint is shown in controller raw percent scale. Pressure axis is fixed to readable psi range.
+            </div>
           </div>
         </div>
       </div>
@@ -121,11 +133,54 @@ function createCharts() {
     data: {
       datasets: PRESSURE_TRACES.map(t => ({
         label: t.label, borderColor: t.color, backgroundColor: t.color + '15',
-        borderWidth: 1.5, borderDash: t.borderDash || [], pointRadius: 0, tension: 0.3, data: []
+        borderWidth: 1.5, borderDash: t.borderDash || [], pointRadius: 0, tension: 0.3, data: [],
+        yAxisID: t.yAxisID || 'y'
       }))
     },
-    options: { ...commonOpts, scales: { ...commonOpts.scales, y: { ...commonOpts.scales.y, title: { display: true, text: 'cmH\u2082O / psi', color: tickColor } } } }
+    options: {
+      ...commonOpts,
+      scales: {
+        x: commonOpts.scales.x,
+        yVacuum: {
+          beginAtZero: false,
+          grid: commonOpts.scales.y.grid,
+          ticks: commonOpts.scales.y.ticks,
+          title: { display: true, text: 'Vacuum (cmH\u2082O)', color: tickColor }
+        },
+        ySetpoint: {
+          position: 'right',
+          min: 0,
+          max: 100,
+          grid: { drawOnChartArea: false },
+          ticks: { color: tickColor, font: { size: 10 } },
+          title: { display: true, text: 'Vac Setpoint (% raw)', color: tickColor }
+        },
+        yPressure: {
+          position: 'right',
+          offset: true,
+          beginAtZero: true,
+          grid: { drawOnChartArea: false },
+          ticks: { color: tickColor, font: { size: 10 } },
+          title: { display: true, text: 'Pressure (psi)', color: tickColor }
+        }
+      },
+      plugins: {
+        ...commonOpts.plugins,
+        legend: {
+          ...commonOpts.plugins.legend,
+          onClick: (e, legendItem, legend) => {
+            const ci = legend.chart;
+            const idx = legendItem.datasetIndex;
+            if (ci.isDatasetVisible(idx)) ci.hide(idx);
+            else ci.show(idx);
+            syncPressureAxisVisibility(ci);
+            ci.update();
+          }
+        }
+      }
+    }
   });
+  syncPressureAxisVisibility(pressureChart);
 }
 
 function bindEvents() {
@@ -144,13 +199,33 @@ function bindEvents() {
   });
 
   document.getElementById('btn-chart-clear').addEventListener('click', () => { dataBuffer = []; refreshCharts(); });
+  const pollInput = document.getElementById('poll-interval-ms');
+  const pollApply = document.getElementById('btn-poll-apply');
+  const pollNominal = document.getElementById('btn-poll-nominal');
+  if (pollInput) pollInput.value = String(getPollIntervalMs());
+  pollApply?.addEventListener('click', () => {
+    const next = setPollIntervalMs(pollInput?.value ?? '');
+    if (pollInput) pollInput.value = String(next);
+  });
+  pollInput?.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    const next = setPollIntervalMs(pollInput.value);
+    pollInput.value = String(next);
+  });
+  pollNominal?.addEventListener('click', () => {
+    const next = setPollIntervalMs(getNominalPollIntervalMs());
+    if (pollInput) pollInput.value = String(next);
+  });
 }
 
 function onData(data) {
   if (paused) return;
   const point = { timestamp: Date.now() };
+  const p = parseFloat(data.Pressure_STATE);
+  if (Number.isFinite(p)) maxObservedPressure = Math.max(maxObservedPressure, p);
   let hasValue = false;
   for (const t of [...TEMP_TRACES, ...PRESSURE_TRACES]) {
+    if (!isDataKeyVisible(t.key)) continue;
     if (data[t.key] !== undefined) {
       point[t.key] = parseFloat(data[t.key]);
       if (!isNaN(point[t.key])) hasValue = true;
@@ -169,14 +244,42 @@ function refreshCharts() {
   if (countEl) countEl.textContent = `${dataBuffer.length} points`;
 
   TEMP_TRACES.forEach((t, i) => {
+    tempChart.data.datasets[i].hidden = !isDataKeyVisible(t.key);
     tempChart.data.datasets[i].data = visible.filter(p => p[t.key] !== undefined).map(p => ({ x: p.timestamp, y: p[t.key] }));
   });
   tempChart.update('none');
 
   PRESSURE_TRACES.forEach((t, i) => {
+    pressureChart.data.datasets[i].hidden = !isDataKeyVisible(t.key);
     pressureChart.data.datasets[i].data = visible.filter(p => p[t.key] !== undefined).map(p => ({ x: p.timestamp, y: p[t.key] }));
   });
+  updatePressureAxisRange();
+  syncPressureAxisVisibility(pressureChart);
   pressureChart.update('none');
 }
 
 export function getChartData() { return dataBuffer; }
+
+function updatePressureAxisRange() {
+  if (!pressureChart?.options?.scales?.yPressure) return;
+  const configuredMax = Number(store.data?.PressureMAX_SETPOINT);
+  const targetMax = Math.max(
+    5,
+    Number.isFinite(configuredMax) ? configuredMax : 0,
+    maxObservedPressure * 1.2
+  );
+  const rounded = Math.ceil(targetMax / 5) * 5;
+  pressureChart.options.scales.yPressure.max = rounded;
+}
+
+function syncPressureAxisVisibility(chart) {
+  if (!chart?.options?.scales) return;
+  const hasVisibleForAxis = (axisId) => chart.data.datasets.some((ds, i) => {
+    const dsAxis = ds.yAxisID || 'y';
+    if (dsAxis !== axisId) return false;
+    return chart.isDatasetVisible(i);
+  });
+  chart.options.scales.yVacuum.display = hasVisibleForAxis('yVacuum');
+  chart.options.scales.ySetpoint.display = hasVisibleForAxis('ySetpoint');
+  chart.options.scales.yPressure.display = hasVisibleForAxis('yPressure');
+}

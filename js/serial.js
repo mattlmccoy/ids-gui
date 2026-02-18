@@ -5,13 +5,16 @@ import store from './state.js';
 const BAUD_RATE = 115200;
 const ARDUINO_VENDOR_ID = 0x2341;
 const BUFFER_MAX = 8192; // 8 KB overflow guard
-const POLL_INTERVAL_MS = 1000;
+const NOMINAL_POLL_INTERVAL_MS = 1000;
+const POLL_INTERVAL_MIN_MS = 200;
+const POLL_INTERVAL_MAX_MS = 5000;
 
 let port = null;
 let reader = null;
 let writer = null;
 let readLoopActive = false;
 let pollTimer = null;
+let pollIntervalMs = NOMINAL_POLL_INTERVAL_MS;
 
 /* ---------- Brace-counting JSON frame parser ---------- */
 
@@ -125,7 +128,7 @@ function startPolling() {
   stopPolling();
   pollTimer = setInterval(() => {
     send('{"GET":"ALL"}');
-  }, POLL_INTERVAL_MS);
+  }, pollIntervalMs);
 }
 
 function stopPolling() {
@@ -215,6 +218,25 @@ export async function send(jsonStr) {
 /** Check if Web Serial API is available */
 export function isSerialSupported() {
   return 'serial' in navigator;
+}
+
+export function getPollIntervalMs() {
+  return pollIntervalMs;
+}
+
+export function getNominalPollIntervalMs() {
+  return NOMINAL_POLL_INTERVAL_MS;
+}
+
+export function setPollIntervalMs(ms) {
+  const parsed = parseInt(ms, 10);
+  if (!Number.isFinite(parsed)) return pollIntervalMs;
+  const next = Math.max(POLL_INTERVAL_MIN_MS, Math.min(POLL_INTERVAL_MAX_MS, parsed));
+  if (next === pollIntervalMs) return pollIntervalMs;
+  pollIntervalMs = next;
+  if (store.connection === 'CONNECTED') startPolling();
+  store.log('info', `Data polling interval set to ${pollIntervalMs} ms`);
+  return pollIntervalMs;
 }
 
 // Cleanup on page unload

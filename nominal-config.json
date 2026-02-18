@@ -1,0 +1,8 @@
+{
+  "settings": {},
+  "setpoints": {
+    "Vacuum_SETPOINT": "28",
+    "Flow_SETPOINT": "50",
+    "Temperature_SETPOINT": "25"
+  }
+}

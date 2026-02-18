@@ -7,6 +7,7 @@
  *   'error'        — alarm/error status changed           (payload: { raw, decoded })
  *   'log'          — new log entry                        (payload: { severity, message, timestamp })
  *   'command-sent' — command sent to firmware              (payload: string)
+ *   'heater-visibility' — heater visibility changed        (payload: object)
  */
 
 class StateStore {
@@ -25,6 +26,12 @@ class StateStore {
 
     /** Session start time */
     this.sessionStart = null;
+
+    /** Heater visibility flags used for UI/chart/log filtering */
+    this.heaterVisibility = {
+      MainHeater: true,
+      AuxHeater: true
+    };
   }
 
   /**
@@ -78,6 +85,20 @@ class StateStore {
   log(severity, message) {
     const entry = { severity, message, timestamp: new Date() };
     this.emit('log', entry);
+  }
+
+  /** Set heater visibility and emit */
+  setHeaterVisibility(heater, visible) {
+    if (!(heater in this.heaterVisibility)) return;
+    const next = !!visible;
+    if (this.heaterVisibility[heater] === next) return;
+    this.heaterVisibility = { ...this.heaterVisibility, [heater]: next };
+    this.emit('heater-visibility', this.heaterVisibility);
+  }
+
+  /** Get heater visibility map */
+  getHeaterVisibility() {
+    return this.heaterVisibility;
   }
 }
 

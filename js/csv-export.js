@@ -2,6 +2,7 @@
 
 import store from './state.js';
 import { formatFileDate } from './utils.js';
+import { HEATER_KEYS, isDataKeyVisible } from './heater-visibility.js';
 
 const MAX_RECORDS = 3600; // ~1 hour at 1 sample/sec
 let sessionData = [];      // Array of { timestamp, ...allKeys }
@@ -9,11 +10,13 @@ let allKeysSet = new Set();
 
 export function initCSVExport() {
   store.on('data', recordData);
+  store.on('heater-visibility', pruneHiddenHeaterKeys);
 }
 
 function recordData(data) {
   const record = { timestamp: new Date().toISOString() };
   for (const [key, value] of Object.entries(data)) {
+    if (!isDataKeyVisible(key)) continue;
     record[key] = value;
     allKeysSet.add(key);
   }
@@ -71,4 +74,20 @@ function downloadCSV(content, filename) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function pruneHiddenHeaterKeys() {
+  const hiddenKeys = [];
+  for (const cfg of Object.values(HEATER_KEYS)) {
+    if (!isDataKeyVisible(cfg.tempKey)) hiddenKeys.push(cfg.tempKey);
+    if (!isDataKeyVisible(cfg.ssrKey)) hiddenKeys.push(cfg.ssrKey);
+  }
+  if (hiddenKeys.length === 0) return;
+
+  hiddenKeys.forEach(k => allKeysSet.delete(k));
+  sessionData = sessionData.map(record => {
+    const next = { ...record };
+    hiddenKeys.forEach(k => delete next[k]);
+    return next;
+  });
 }

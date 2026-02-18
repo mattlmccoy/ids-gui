@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session, ipcMain } = require('electron');
+const { app, BrowserWindow, session, ipcMain, dialog } = require('electron');
 const path = require('path');
 const http = require('http');
 const fs = require('fs');
@@ -72,6 +72,65 @@ app.whenReady().then(() => {
     }
     pendingSerialSelect = { callback, webContents };
     webContents.send('serial-port-list', portList);
+  });
+
+  const inkFilePath = () => path.join(app.getPath('userData'), 'ink-check-data.json');
+
+  ipcMain.handle('ink-data-load-default', async () => {
+    const filePath = inkFilePath();
+    try {
+      if (!fs.existsSync(filePath)) return { ok: true, exists: false, filePath, data: null };
+      const raw = await fs.promises.readFile(filePath, 'utf8');
+      const data = JSON.parse(raw);
+      return { ok: true, exists: true, filePath, data };
+    } catch (err) {
+      return { ok: false, error: String(err?.message || err), filePath };
+    }
+  });
+
+  ipcMain.handle('ink-data-save-default', async (_evt, payload) => {
+    const filePath = inkFilePath();
+    try {
+      await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.promises.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf8');
+      return { ok: true, filePath };
+    } catch (err) {
+      return { ok: false, error: String(err?.message || err), filePath };
+    }
+  });
+
+  ipcMain.handle('ink-data-import-json', async () => {
+    try {
+      const win = BrowserWindow.getFocusedWindow();
+      const pick = await dialog.showOpenDialog(win, {
+        title: 'Load Ink Data JSON',
+        properties: ['openFile'],
+        filters: [{ name: 'JSON', extensions: ['json'] }]
+      });
+      if (pick.canceled || !pick.filePaths?.length) return { ok: true, canceled: true };
+      const filePath = pick.filePaths[0];
+      const raw = await fs.promises.readFile(filePath, 'utf8');
+      const data = JSON.parse(raw);
+      return { ok: true, canceled: false, filePath, data };
+    } catch (err) {
+      return { ok: false, error: String(err?.message || err) };
+    }
+  });
+
+  ipcMain.handle('ink-data-export-json', async (_evt, payload) => {
+    try {
+      const win = BrowserWindow.getFocusedWindow();
+      const save = await dialog.showSaveDialog(win, {
+        title: 'Export Ink Data JSON',
+        defaultPath: 'ink-check-data.json',
+        filters: [{ name: 'JSON', extensions: ['json'] }]
+      });
+      if (save.canceled || !save.filePath) return { ok: true, canceled: true };
+      await fs.promises.writeFile(save.filePath, JSON.stringify(payload, null, 2), 'utf8');
+      return { ok: true, canceled: false, filePath: save.filePath };
+    } catch (err) {
+      return { ok: false, error: String(err?.message || err) };
+    }
   });
 
   createWindow();

@@ -26,6 +26,7 @@
     "productName": "Radio Frequency AM Ink Delivery System",
     "files": [
       "index.html",
+      "nominal-config.json",
       "css/**/*",
       "js/**/*",
       "vendor/**/*",

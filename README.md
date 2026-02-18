@@ -12,21 +12,15 @@ You have two easy options:
    ```
 2. Download ZIP (no Git needed)
    1. Open the repo page in your browser.
-   2. Click **Code** → **Download ZIP**.
+   2. Click **Code** -> **Download ZIP**.
    3. Unzip it wherever you want.
 
 ## Pick A Folder
 
-From here on, you must run commands **inside the project folder**. Example:
+From here on, run commands inside the project folder.
 
 ```bash
 cd /path/to/ids-gui
-```
-
-On macOS, if you moved it to your Desktop:
-
-```bash
-cd ~/Desktop/ids-gui
 ```
 
 ## Quick Start (Electron App)
@@ -35,28 +29,18 @@ cd ~/Desktop/ids-gui
    ```bash
    npm install
    ```
-2. Build the desktop app (required after install or updates):
+2. Build desktop app (required after install or updates):
    ```bash
    npm run dist
    ```
-2. Run the app:
+3. Run the app:
    ```bash
    npm run start
    ```
 
-## Windows Desktop Shortcut (Easy Launch)
-
-1. Make sure you have run `npm install` in the project folder at least once.
-2. Locate `run-app.bat` in the project folder.
-3. Right‑click `run-app.bat` → **Create shortcut**.
-4. Drag the new shortcut to your Desktop.
-5. Double‑click the shortcut to launch the app.
-
-Tip: Right‑click the shortcut → **Properties** → **Change Icon…** to customize it.
-
 ## Quick Start (Local Server + Chrome)
 
-1. Start a local server:
+1. Start local server:
    ```bash
    python3 -m http.server 8080
    ```
@@ -67,11 +51,9 @@ Tip: Right‑click the shortcut → **Properties** → **Change Icon…** to cus
 
 Notes:
 - Web Serial requires Chrome or Edge.
-- If you skip the local server and open `index.html` directly, modules may not load.
+- If you open `index.html` directly, modules may not load.
 
 ## Build Installers (macOS / Windows / Linux)
-
-You must run this after any install or update:
 
 ```bash
 npm run dist
@@ -82,23 +64,67 @@ Artifacts are produced in `dist/`:
 - Windows: `.exe` (NSIS) / `.zip`
 - Linux: `.AppImage` / `.deb`
 
+## Ink Check Tool
+
+The app now includes a dedicated **Ink Check** tab for IPA-based ink concentration tracking and reconstitution planning.
+
+### Core capabilities
+- Per-sample logging of:
+  - Bottle state (`brand new` / `opened`)
+  - Ink family (for example `IPA 25 wt%`)
+  - Nominal wt% at sample
+  - Known sample volume (uL)
+  - Sample mass (g)
+  - Current bottle volume (mL)
+  - Notes and baseline flag
+- Family-scoped analysis (one ink family at a time)
+- Density and IPA add-back trend plotting
+- Bottle-basis IPA add-back estimate
+- In-the-moment aliquot IPA add-back calculator (g and mL)
+- Reminder prompt/snooze for overdue checks
+
+### Data persistence and portability
+- Auto-load/auto-save persistent JSON file in Electron user data folder.
+- Manual controls: `Load Stored`, `Save Stored`, `Import JSON`, `Export JSON`, `Export CSV`.
+- Cross-platform path examples:
+  - macOS: `~/Library/Application Support/rf-am-ink-delivery-system/ink-check-data.json`
+  - Windows: `%APPDATA%\\rf-am-ink-delivery-system\\ink-check-data.json`
+
+### Technical reference
+- Full technical sheet:
+  - `INK_CHECK_TECHNICAL_SHEET.md`
+- Sample 2-week dataset:
+  - `ink-check-sample-data-2weeks.json`
+
+## Other major GUI updates in this release
+- Operation tab: `Send All` reliability/progress updates.
+- Config load/send flow robustness improvements.
+- Heater visibility controls integrated with cards/charts/error handling.
+- Active error dismissal workflow and improved alarm UX.
+- Nominal config support and nominal-send workflow.
+- Trending chart axis/legend/unit behavior improvements.
+- Poll interval control in trending view.
+- Firmware-aligned mode behavior updates (Purge/Flush/Drain/Bypass).
+
+## Changelog
+
+See `CHANGELOG.md` for full release notes.
+
 ## Notes
 
-- Web Serial support is required. The Electron build enables the Serial feature flag.
+- Web Serial support is required. The Electron build enables Serial feature flags.
 - Vendor assets (Bootstrap, Chart.js, etc.) are copied locally via `npm run copy-vendor`.
 
 ## Troubleshooting
 
 - **`npm: command not found`**
-  - Install Node.js from https://nodejs.org/ (use the LTS version), then re-run `npm install`.
-- **`npm run dist` says “Missing script: dist”**
-  - You’re likely in the wrong folder. Run `pwd` and confirm you’re inside the `ids-gui` folder.
+  - Install Node.js LTS from https://nodejs.org/ and re-run `npm install`.
 - **No serial devices appear / Connect does nothing**
-  - Use Chrome or Edge for the local server flow.
-  - Check the USB cable and confirm the device is powered.
-  - If multiple devices are connected, use the selector when prompted.
-- **App loads but looks broken**
-  - Make sure you started a local server and didn’t open `index.html` directly.
+  - Use Chrome/Edge for local-server flow.
+  - Check USB cable/power.
+  - Use selector when multiple devices are connected.
+- **App appears dimmed on startup**
+  - Update to latest code. Ink-check modals are now tab-scoped to avoid hidden-tab backdrops.
 
 ## Screenshots
 
