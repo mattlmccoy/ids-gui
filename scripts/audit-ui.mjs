@@ -24,6 +24,8 @@ const validation = read('js/ui-validation.js');
 const ink = read('js/ui-ink.js');
 const pagesWorkflow = read('.github/workflows/deploy-pages.yml');
 const pagesBuilder = read('scripts/build-pages.mjs');
+const indexHtml = read('index.html');
+const updatePage = read('update.html');
 
 const expectedCommands = [
   '{"GET":"ALL"}',
@@ -78,5 +80,8 @@ if (!pagesWorkflow.includes('npm run build:pages')) throw new Error('Pages workf
 for (const entry of ['index.html', 'css', 'js', 'vendor']) {
   if (!pagesBuilder.includes(`'${entry}'`)) throw new Error(`Pages builder is missing ${entry}`);
 }
+if (!indexHtml.includes('ids-build-commit') || !pagesBuilder.includes('ids-build-commit')) throw new Error('Pages build identity is not embedded');
+if (!indexHtml.includes('update-banner') || !read('js/app.js').includes('checkDeploymentInfo')) throw new Error('Web update notification flow is missing');
+if (!updatePage.includes('getRegistrations') || !updatePage.includes("startsWith('ids-gui-')")) throw new Error('Force-update cache recovery page is incomplete');
 
 console.log(`UI audit passed: ${jsFiles.length + 2} scripts parsed, ${expectedCommands.length} commands verified.`);

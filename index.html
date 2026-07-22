@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="ids-build-commit" content="local">
   <title>Radio Frequency AM Ink Delivery System</title>
   <meta name="theme-color" content="#181b23">
   <link rel="manifest" href="manifest.webmanifest">
@@ -33,6 +34,13 @@
   <link href="css/styles.css" rel="stylesheet">
 </head>
 <body>
+
+  <div id="update-banner" class="alert alert-warning rounded-0 border-start-0 border-end-0 d-none mb-0" role="alert">
+    <div class="container-fluid d-flex flex-wrap align-items-center justify-content-between gap-2">
+      <span><i class="bi bi-arrow-repeat me-2"></i><strong>A newer IDS web release is available.</strong> Save any active work, then update.</span>
+      <button type="button" class="btn btn-sm btn-warning" id="btn-apply-web-update">Update now</button>
+    </div>
+  </div>
 
   <!-- Alarm Banner (hidden by default) -->
   <div id="alarm-banner" class="alarm-banner d-none">
@@ -265,7 +273,7 @@
   <!-- App Entry Point -->
   <script type="module">
     await window.__depsReady;
-    await import('./js/app.js?v=r19');
+    await import('./js/app.js?v=local');
   </script>
 </body>
 </html>

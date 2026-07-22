@@ -7,6 +7,7 @@ const output = path.join(root, '_site');
 const publicEntries = [
   'index.html',
   'remote.html',
+  'update.html',
   'manifest.webmanifest',
   'service-worker.js',
   'assets',
@@ -30,10 +31,16 @@ for (const entry of publicEntries) {
 }
 
 fs.writeFileSync(path.join(output, '.nojekyll'), '');
+const buildCommit = process.env.GITHUB_SHA || 'local';
 fs.writeFileSync(path.join(output, 'build-info.json'), JSON.stringify({
-  commit: process.env.GITHUB_SHA || 'local',
+  commit: buildCommit,
   builtAt: new Date().toISOString(),
   channel: process.env.GITHUB_ACTIONS ? 'github-pages' : 'local-preview'
 }, null, 2));
+
+const builtIndex = path.join(output, 'index.html');
+fs.writeFileSync(builtIndex, fs.readFileSync(builtIndex, 'utf8')
+  .replace('<meta name="ids-build-commit" content="local">', `<meta name="ids-build-commit" content="${buildCommit}">`)
+  .replace("./js/app.js?v=local", `./js/app.js?v=${buildCommit}`));
 
 console.log(`Pages artifact created at ${output}`);

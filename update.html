@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <title>Updating IDS…</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0f1117; color: #e5e7eb; }
+    main { width: min(520px, calc(100% - 32px)); padding: 28px; border: 1px solid #343846; border-radius: 12px; background: #1b1f2a; }
+    h1 { margin-top: 0; font-size: 1.3rem; } p { color: #aab0c0; line-height: 1.5; }
+    .spinner { width: 22px; height: 22px; border: 3px solid #343846; border-top-color: #4c8dff; border-radius: 50%; animation: spin .8s linear infinite; }
+    .error { color: #f87171; } @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="spinner" aria-hidden="true"></div>
+    <h1>Updating the IDS web application</h1>
+    <p id="update-status">Removing the old offline application cache. Browser settings and recorded IDS data will be preserved.</p>
+  </main>
+  <script>
+    (async () => {
+      const status = document.getElementById('update-status');
+      try {
+        if ('serviceWorker' in navigator) {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(registrations
+            .filter(reg => new URL(reg.scope).pathname.startsWith('/ids-gui/'))
+            .map(reg => reg.unregister()));
+        }
+        if ('caches' in window) {
+          const names = await caches.keys();
+          await Promise.all(names.filter(name => name.startsWith('ids-gui-')).map(name => caches.delete(name)));
+        }
+        status.textContent = 'Cache cleared. Loading the current release…';
+        const target = new URL('./', location.href);
+        target.searchParams.set('updated', Date.now().toString());
+        location.replace(target.href);
+      } catch (error) {
+        status.className = 'error';
+        status.textContent = `Automatic update failed: ${error.message}. Close this tab, reopen the IDS site, and use a hard refresh.`;
+      }
+    })();
+  </script>
+</body>
+</html>

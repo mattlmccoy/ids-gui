@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ids-gui-offline-v2';
+const CACHE_NAME = 'ids-gui-offline-v3';
 const APP_SHELL = [
   './', './index.html', './remote.html', './manifest.webmanifest',
   './css/styles.css', './assets/ids-icon.svg'

@@ -16,12 +16,15 @@ import { initCSVExport, exportSessionCSV } from './csv-export.js';
 import { initNotifications } from './notifications.js';
 import { initRemoteControl } from './remote-control.js';
 
+const CURRENT_WEB_BUILD = document.querySelector('meta[name="ids-build-commit"]')?.content || 'local';
+const UPDATE_CHECK_INTERVAL_MS = 60_000;
+
 /* ---------- Boot ---------- */
 
 function boot() {
   initThemeToggle();
   initSerialPicker();
-  loadDeploymentInfo();
+  initDeploymentUpdates();
   initPWA();
 
   // Check Web Serial support
@@ -72,17 +75,35 @@ function boot() {
   store.log('info', 'IDS GUI R18 initialized');
 }
 
-async function loadDeploymentInfo() {
+function initDeploymentUpdates() {
+  void checkDeploymentInfo();
+  const timer = setInterval(checkDeploymentInfo, UPDATE_CHECK_INTERVAL_MS);
+  window.addEventListener('beforeunload', () => clearInterval(timer), { once: true });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') void checkDeploymentInfo();
+  });
+  document.getElementById('btn-apply-web-update')?.addEventListener('click', () => {
+    location.assign(`./update.html?from=${encodeURIComponent(CURRENT_WEB_BUILD)}`);
+  });
+}
+
+async function checkDeploymentInfo() {
   try {
-    const response = await fetch('./build-info.json', { cache: 'no-store' });
+    const response = await fetch(`./build-info.json?check=${Date.now()}`, { cache: 'no-store' });
     if (!response.ok) return;
     const info = await response.json();
     if (info.channel !== 'github-pages' || !info.commit) return;
     const badge = document.getElementById('deployment-badge');
     if (!badge) return;
-    badge.textContent = `WEB ${String(info.commit).slice(0, 7)}`;
-    badge.title = `GitHub Pages build ${info.commit}\nDeployed ${info.builtAt || ''}`;
+    const running = CURRENT_WEB_BUILD === 'local' ? info.commit : CURRENT_WEB_BUILD;
+    const updateAvailable = CURRENT_WEB_BUILD !== 'local' && info.commit !== CURRENT_WEB_BUILD;
+    badge.textContent = `WEB ${String(running).slice(0, 7)}${updateAvailable ? ' • UPDATE' : ''}`;
+    badge.title = updateAvailable
+      ? `Running ${CURRENT_WEB_BUILD}\nAvailable ${info.commit}\nDeployed ${info.builtAt || ''}`
+      : `GitHub Pages build ${running}\nDeployed ${info.builtAt || ''}`;
+    badge.className = `badge ${updateAvailable ? 'text-bg-warning' : 'bg-secondary'}`;
     badge.classList.remove('d-none');
+    document.getElementById('update-banner')?.classList.toggle('d-none', !updateAvailable);
   } catch (_) {
     // Electron and ad-hoc local servers do not include build-info.json.
   }
@@ -90,7 +111,7 @@ async function loadDeploymentInfo() {
 
 function initPWA() {
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-    navigator.serviceWorker.register('./service-worker.js').catch(error => {
+    navigator.serviceWorker.register('./service-worker.js').then(registration => registration.update()).catch(error => {
       console.warn('[pwa] Service worker registration failed:', error);
     });
   }
