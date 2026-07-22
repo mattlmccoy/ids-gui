@@ -119,6 +119,13 @@
           <i class="bi bi-droplet-half me-1"></i>Ink Check
         </button>
       </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="tab-validation" data-bs-toggle="tab"
+                data-bs-target="#panel-validation" type="button" role="tab"
+                aria-controls="panel-validation" aria-selected="false">
+          <i class="bi bi-clipboard2-check me-1"></i>Lab Validation
+        </button>
+      </li>
     </ul>
 
     <!-- Tab Content -->
@@ -158,6 +165,12 @@
       <div class="tab-pane fade" id="panel-ink" role="tabpanel"
            aria-labelledby="tab-ink">
         <!-- Populated by ui-ink.js -->
+      </div>
+
+      <!-- Guided physical validation -->
+      <div class="tab-pane fade" id="panel-validation" role="tabpanel"
+           aria-labelledby="tab-validation">
+        <!-- Populated by ui-validation.js -->
       </div>
     </div>
   </div>

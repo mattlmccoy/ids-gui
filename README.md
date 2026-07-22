@@ -131,6 +131,13 @@ See `CHANGELOG.md` for full release notes.
 - Remote alerts are edge-triggered and cover Weir/Supply overflow, firmware alarms,
   unexpected controller disconnects, and stale telemetry, with recovery events and
   duplicate suppression.
+- Lab Validation provides a non-actuating, guided 36-check physical I/O audit with
+  live readbacks, persisted results, notes, a change timeline, and JSON/Markdown reports.
+- The remote dashboard now includes allowlisted, read-only live system telemetry for phones.
+- Ink Check now defaults to a 1 mL sample, captures temperature, previews density,
+  rejects suspect measurements for dosing, sorts imports chronologically, and segments
+  historical calculations at each new baseline. Its concentration model remains visibly
+  marked uncalibrated until lab calibration data are collected.
 
 ## Troubleshooting
 

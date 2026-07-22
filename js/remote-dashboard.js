@@ -10,6 +10,7 @@ const elements = {
   forget: document.getElementById('remote-forget'),
   refresh: document.getElementById('remote-refresh'),
   cards: document.getElementById('remote-status-cards'),
+  devices: document.getElementById('remote-device-cards'),
   rows: document.getElementById('remote-event-rows'),
   updated: document.getElementById('remote-updated'),
   state: document.getElementById('remote-connection-state')
@@ -41,6 +42,7 @@ function forgetConfig() {
   elements.token.value = '';
   stopPolling();
   elements.cards.innerHTML = '';
+  elements.devices.innerHTML = '';
   elements.rows.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">Credentials removed from this browser.</td></tr>';
   setConnection(false, 'Offline');
 }
@@ -62,6 +64,7 @@ async function refresh() {
   elements.refresh.disabled = true;
   try {
     const response = await api('/api/v1/status', { method: 'GET' });
+    renderDevices(response.devices || [], response.generatedAt);
     renderStatus(response.states || []);
     renderEvents(response.events || []);
     elements.updated.textContent = `Updated ${new Date(response.generatedAt || Date.now()).toLocaleString()}`;
@@ -73,6 +76,73 @@ async function refresh() {
     elements.refresh.disabled = false;
   }
 }
+
+function renderDevices(devices, generatedAt) {
+  if (!devices.length) {
+    elements.devices.innerHTML = '<div class="col-12"><div class="alert alert-secondary mb-0">No live telemetry yet. Enable Remote Alerts on the lab computer and leave the IDS page connected.</div></div>';
+    return;
+  }
+  const now = new Date(generatedAt || Date.now()).getTime();
+  elements.devices.innerHTML = devices.map(device => {
+    const data = device.telemetry || {};
+    const ageSeconds = Math.max(0, Math.round((now - new Date(device.updated_at).getTime()) / 1000));
+    const live = device.connection === 'CONNECTED' && ageSeconds <= 30;
+    const status = live ? 'LIVE' : device.connection === 'CONNECTED' ? 'STALE' : 'OFFLINE';
+    const badge = live ? 'text-bg-success' : status === 'STALE' ? 'text-bg-warning' : 'text-bg-secondary';
+    const mode = activeMode(data);
+    return `<div class="col-12">
+      <div class="dash-card ${live ? 'accent-green' : 'accent-orange'}">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-cpu me-1"></i>${escapeHtml(device.system_id || device.device_id)}</span>
+          <span class="badge ${badge}">${status}</span>
+        </div>
+        <div class="card-body">
+          <div class="row g-2 mb-3">
+            ${metric('Mode', mode)}
+            ${metric('Vacuum', display(data.Vacuum_STATE))}
+            ${metric('Pressure', display(data.Pressure_STATE))}
+            ${metric('Fluid temp', withUnit(data.FluidTemperature_STATE, '°C'))}
+          </div>
+          <div class="d-flex flex-wrap gap-2 mb-2">${floatBadges(data)}</div>
+          <div class="small text-muted">Firmware ${escapeHtml(data.SoftwareRev ?? '—')} · Last update ${formatAge(ageSeconds)} · ${formatTime(device.updated_at)}</div>
+          <div class="small mt-1 ${alarmActive(data) ? 'text-danger fw-semibold' : 'text-success'}">Alarm: ${escapeHtml(data.AlarmStatus ?? data.ErrorCode_STATE ?? '—')}</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function metric(label, value) {
+  return `<div class="col-6 col-md-3"><div class="border rounded p-2 h-100"><div class="small text-muted">${label}</div><div class="fs-5 fw-semibold">${escapeHtml(value)}</div></div></div>`;
+}
+
+function activeMode(data) {
+  for (const [key, label] of [['Run_MODE', 'RUN'], ['Purge_MODE', 'PURGE'], ['Flush_MODE', 'FLUSH'], ['Drain_MODE', 'DRAIN'], ['Bypass_MODE', 'BYPASS']]) {
+    if (Number(data[key]) === 1) return label;
+  }
+  return 'STOP';
+}
+
+function floatBadges(data) {
+  const floats = [
+    ['SupplyFloat_STATE', 'Supply'], ['WeirFloat_STATE', 'Weir'], ['WasteFloat_STATE', 'Waste'],
+    ['SupplyOverflowFloat_STATE', 'Supply OVF'], ['WeirOverflowFloat_STATE', 'Weir OVF'],
+    ['FlushFloat_STATE', 'Flush'], ['ServiceFloat_STATE', 'Service']
+  ];
+  return floats.filter(([key]) => data[key] !== undefined).map(([key, label]) => {
+    const on = Number(data[key]) === 1;
+    return `<span class="badge ${on ? 'text-bg-primary' : 'text-bg-secondary'}">${escapeHtml(label)}: ${on ? 'ON' : 'OFF'}</span>`;
+  }).join('');
+}
+
+function alarmActive(data) {
+  const raw = String(data.AlarmStatus ?? data.ErrorCode_STATE ?? '');
+  return !!raw && !raw.endsWith('NO_ERROR');
+}
+
+function display(value) { return value === undefined || value === null || value === '' ? '—' : String(value); }
+function withUnit(value, unit) { return value === undefined || value === null || value === '' ? '—' : `${value} ${unit}`; }
+function formatAge(seconds) { return seconds < 60 ? `${seconds}s ago` : `${Math.floor(seconds / 60)}m ago`; }
 
 function renderStatus(states) {
   if (!states.length) {

@@ -11,7 +11,6 @@ const publicEntries = [
   'service-worker.js',
   'assets',
   'nominal-config.json',
-  'ink-check-sample-data-2weeks.json',
   'css',
   'js',
   'vendor'

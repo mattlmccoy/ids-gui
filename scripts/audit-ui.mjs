@@ -20,6 +20,8 @@ const operation = read('js/ui-operation.js');
 const monitor = read('js/ui-monitor.js');
 const settings = read('js/ui-settings.js');
 const charts = read('js/ui-charts.js');
+const validation = read('js/ui-validation.js');
+const ink = read('js/ui-ink.js');
 const pagesWorkflow = read('.github/workflows/deploy-pages.yml');
 const pagesBuilder = read('scripts/build-pages.mjs');
 
@@ -56,6 +58,11 @@ for (const stateKey of [
 if (!settings.includes('toggle-weir-ovf-invert')) throw new Error('Missing Weir OVF inversion control');
 if (!charts.includes('toggle-float-tracks')) throw new Error('Missing float trend control');
 if (!charts.includes("shown.bs.tab")) throw new Error('Trending charts do not resize when shown');
+if (!validation.includes('This page records observations but never actuates hardware')) throw new Error('Missing guided lab validation safety boundary');
+if (!validation.includes('Export report')) throw new Error('Lab validation report export is missing');
+if (!ink.includes('defaultSampleVolumeUl: 1000')) throw new Error('Ink checker sample default is not 1 mL');
+if (!ink.includes('Uncalibrated model:')) throw new Error('Ink checker calibration warning is missing');
+if (!ink.includes('assessDensity')) throw new Error('Ink checker plausibility guard is missing');
 if (!pagesWorkflow.includes('actions/deploy-pages@v4')) throw new Error('Missing GitHub Pages deployment action');
 if (!pagesWorkflow.includes('npm run build:pages')) throw new Error('Pages workflow does not build a clean artifact');
 for (const entry of ['index.html', 'css', 'js', 'vendor']) {

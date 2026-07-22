@@ -9,6 +9,12 @@ unexpected controller disconnect, and stale telemetry. Each condition is stored 
 an active/recovered state, so repeated device frames do not generate repeated push
 notifications.
 
+When remote alerts are enabled, the lab page also publishes an allowlisted,
+read-only telemetry snapshot every two seconds. The mobile dashboard receives
+system state, modes, primary sensors, floats, alarm status, and freshness through
+the viewer-authenticated status endpoint. Arbitrary controller fields and remote
+commands are not accepted.
+
 Production relay: `https://ids-alert-relay.mattlmccoy.workers.dev`
 
 ## Required Worker secrets
@@ -19,6 +25,8 @@ Production relay: `https://ids-alert-relay.mattlmccoy.workers.dev`
 - `NTFY_TOKEN`: optional ntfy access token. Anonymous ntfy.sh requests from
   Cloudflare's shared egress can be rate-limited, so the UI also supports a
   direct free fallback with the topic stored only in the lab browser.
+- `SLACK_WEBHOOK_URL`: optional Slack Incoming Webhook URL. Keep it only as a
+  Worker secret; it is never returned to either browser UI.
 
 Generate each credential independently with a password manager or
 `openssl rand -hex 32`. Never commit these values.
@@ -33,11 +41,15 @@ wrangler secret put DEVICE_TOKEN --config worker/wrangler.jsonc
 wrangler secret put VIEWER_TOKEN --config worker/wrangler.jsonc
 wrangler secret put NTFY_TOPIC --config worker/wrangler.jsonc
 wrangler secret put NTFY_TOKEN --config worker/wrangler.jsonc
+wrangler secret put SLACK_WEBHOOK_URL --config worker/wrangler.jsonc
 wrangler deploy --config worker/wrangler.jsonc
 ```
 
 The D1 create command adds the generated `database_id` to the Wrangler config.
 Omit `NTFY_TOKEN` only when using an unprotected, hard-to-guess ntfy.sh topic.
+Omit `SLACK_WEBHOOK_URL` when Slack delivery is not desired. Slack failures do
+not prevent ntfy delivery, and duplicate state transitions are suppressed before
+either channel is called.
 
 For local development, add the same names to `worker/.dev.vars` (gitignored),
 apply the migration with `--local`, then run `wrangler dev --config worker/wrangler.jsonc`.

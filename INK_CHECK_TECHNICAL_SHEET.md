@@ -1,7 +1,9 @@
 # Ink Check Tool: Technical Sheet
 
 ## 1. Purpose
-The Ink Check tool estimates concentration drift of IPA-based carbon ink and computes recommended IPA add-back.
+The Ink Check tool logs density drift of IPA-based carbon ink and provides a provisional,
+uncalibrated concentration/add-back estimate. Production dosing must not rely on the
+relative-density estimate until a process-specific calibration curve is installed.
 
 Primary goals:
 - Log timed sample measurements (known volume + measured mass).
@@ -22,6 +24,7 @@ Per sample:
 - `Ink Family` (example: `IPA 25 wt%`)
 - `Nominal wt% (sample)`
 - `Sample Mass (g)`
+- `Sample Temperature (°C)` (optional but recommended)
 - `Current Ink Volume (mL)` (mass basis for bottle-scale add-back)
 - `Notes` (optional)
 - `Mark as baseline reference` (optional)
@@ -63,7 +66,7 @@ Default stored file paths:
 
 ## 3. Data Model
 Top-level JSON payload:
-- `version` (integer; current `1`)
+- `version` (integer; current `2`)
 - `updatedAt` (ISO-8601 UTC)
 - `state` object:
   - `entries[]`
@@ -79,6 +82,7 @@ Each sample entry contains:
 - `nominalCarbonWtPctAtSample`: number (0.1 to 95)
 - `sampleVolumeUl`: number (> 0)
 - `sampleMassG`: number (> 0)
+- `temperatureC`: number (0 to 80) or `null`
 - `bottleVolumeMl`: number (> 0)
 - `note`: string
 - `useAsBaseline`: boolean
@@ -87,7 +91,7 @@ Each sample entry contains:
 - `activeFamily`: string (default `IPA 25 wt%`)
 - `ipaDensityGml`: number (default `0.786`)
 - `reminderHours`: number (default `24`)
-- `defaultSampleVolumeUl`: number
+- `defaultSampleVolumeUl`: number (default `1000`, displayed as 1 mL)
 - `defaultBottleVolumeMl`: number
 
 ### 3.3 Reminder Schema
@@ -104,9 +108,10 @@ For each sample:
   - `rho_sample = sampleMassG / V_sample_ml`  (g/mL)
 
 ### 4.2 Baseline Selection
-For active family only:
-- Baseline entry = latest entry flagged `useAsBaseline == true`.
-- If none is flagged, baseline defaults to first entry of that family.
+For active family only, entries are sorted chronologically. The first entry starts the
+first baseline segment. Every later entry flagged `useAsBaseline == true` starts a new
+segment from that timestamp forward. A future baseline therefore never rewrites older
+history.
 
 Baseline density:
 - `rho_base = density(baselineEntry)`
@@ -115,8 +120,8 @@ Baseline density:
 For each sample:
 - Density ratio:
   - `R = rho_sample / rho_base`
-- Nominal concentration at sample:
-  - `C_nom = nominalCarbonWtPctAtSample`
+- Nominal concentration for the segment:
+  - `C_nom = baselineEntry.nominalCarbonWtPctAtSample`
 - Estimated concentration:
   - `C_est = clamp(C_nom * R, 0, 95)`  (wt%)
 
@@ -149,6 +154,16 @@ Given operator aliquot volume `V_aliquot` (mL), use latest active-family sample:
 - Density increase tracks concentration increase.
 - Bottle volume input is operator-provided and used directly for bottle-scale add-back.
 - IPA density is treated as constant over operating conditions.
+- The current relative-density relationship is an approximation, not a generally valid
+  concentration law. Density contains a large solvent contribution and must be mapped to
+  concentration empirically for this formulation.
+
+### 6.1 Provisional plausibility guard
+
+- The tool previews density before logging.
+- Density below `0.9 * configured IPA density` or above `2.0 g/mL` is marked suspect.
+- Suspect data may be retained for troubleshooting after confirmation, but bottle and
+  aliquot dosing recommendations are disabled for that latest sample.
 
 ## 7. Limitations
 - Model does not currently include:
@@ -156,19 +171,19 @@ Given operator aliquot volume `V_aliquot` (mL), use latest active-family sample:
   - particulate settling effects on sampled aliquot representativeness,
   - temperature correction on density,
   - uncertainty propagation / confidence intervals.
+- The UI prominently labels carbon and add-back results as uncalibrated.
 - Add-back is model-based guidance and should be validated with process-specific empirical calibration.
 
 ## 8. Cross-Platform / Version Notes
-- JSON is versioned (`version: 1`) and normalized on load.
+- JSON is versioned (`version: 2`) and normalized on load.
 - Loader accepts either wrapped payload (`{version, state}`) or direct state object.
 - Family-based fields are required in current behavior; defaults are applied during normalization if missing.
 
-## 9. Test Dataset
-A two-week, 4-hour cadence sample dataset is provided at:
+## 9. Archived Synthetic Dataset
+An older two-week synthetic dataset remains in the repository for regression/audit work at:
 - `/Users/mattmccoy/GaTech Dropbox/Matthew McCoy/mattmccoy-research/research/binderjet/software/aps-engineering/ids-gui/ink-check-sample-data-2weeks.json`
 
-Contains:
-- Baseline at `500 uL`, `0.2243 g`, `500 mL`.
-- Gradual density drift.
-- Volume depletion from sample withdrawal + passive loss.
-- Family tagging (`IPA 25 wt%`) and per-sample nominal wt%.
+Its baseline (`500 uL`, `0.2243 g`) computes to `0.4486 g/mL`, which is implausibly below
+the configured IPA density. It is intentionally excluded from the published Pages artifact
+and must not be used as a physical reference. Tomorrow's lab measurements will replace it
+with a validated calibration dataset.

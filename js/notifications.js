@@ -16,12 +16,29 @@ const DEFAULT_CONFIG = {
   debounceSeconds: 3,
   staleAfterSeconds: 15
 };
+const TELEMETRY_KEYS = [
+  'SystemID', 'SoftwareRev', 'AlarmStatus', 'ErrorCode_STATE',
+  'Run_MODE', 'Purge_MODE', 'Flush_MODE', 'Drain_MODE', 'Bypass_MODE',
+  'Vacuum_STATE', 'Pressure_STATE', 'FluidTemperature_STATE',
+  'MainHeaterTemperature_STATE', 'AUXHeaterTemperature_STATE',
+  'SupplyFloat_STATE', 'WeirFloat_STATE', 'WasteFloat_STATE',
+  'SupplyOverflowFloat_STATE', 'WeirOverflowFloat_STATE', 'FlushFloat_STATE', 'ServiceFloat_STATE'
+];
+const TELEMETRY_INTERVAL_MS = 2000;
+const FLOAT_TELEMETRY_KEYS = new Set([
+  'SupplyFloat_STATE', 'WeirFloat_STATE', 'WasteFloat_STATE',
+  'SupplyOverflowFloat_STATE', 'WeirOverflowFloat_STATE', 'FlushFloat_STATE', 'ServiceFloat_STATE'
+]);
 
 let previousWeirState = null;
 let previousSupplyOverflowState = null;
 let lastDataAt = 0;
 let staleTimer = null;
 let lastDisconnectReason = 'unknown';
+let lastTelemetrySentAt = 0;
+let telemetryTimer = null;
+let telemetrySending = false;
+let lastTelemetryErrorAt = 0;
 const conditions = new Map();
 
 export function areWeirOverflowNotificationsEnabled() {
@@ -74,13 +91,20 @@ export function setRemoteAlertConfig(next) {
 
 export function initNotifications() {
   store.on('data', onData);
-  store.on('float-config', () => { previousWeirState = null; resetCondition('weir_ovf'); });
+  store.on('float-config', () => {
+    previousWeirState = null;
+    resetCondition('weir_ovf');
+    scheduleTelemetry(true);
+  });
   store.on('error', onAlarm);
   store.on('heater-visibility', () => onAlarm({ raw: store.alarmRaw }));
   store.on('disconnect-reason', reason => { lastDisconnectReason = reason || 'unknown'; });
   store.on('connection', onConnection);
   staleTimer = setInterval(checkStaleData, 2000);
-  window.addEventListener('beforeunload', () => clearInterval(staleTimer), { once: true });
+  window.addEventListener('beforeunload', () => {
+    clearInterval(staleTimer);
+    if (telemetryTimer) clearTimeout(telemetryTimer);
+  }, { once: true });
 }
 
 export async function sendRemoteTestAlert(configOverride) {
@@ -92,6 +116,7 @@ export async function sendRemoteTestAlert(configOverride) {
 async function onData(data) {
   if (store.replayActive) return;
   lastDataAt = Date.now();
+  scheduleTelemetry();
   if (store.connection === 'CONNECTED') {
     transitionCondition('data_stale', false, 'data_stale', 'data_recovered');
   }
@@ -144,6 +169,7 @@ function onAlarm({ raw } = {}) {
 }
 
 function onConnection(state) {
+  scheduleTelemetry(true);
   if (state === 'CONNECTED') {
     lastDataAt = Date.now();
     transitionCondition('controller_connection', false, 'controller_disconnected', 'controller_reconnected');
@@ -160,6 +186,52 @@ function onConnection(state) {
     } else {
       establishCondition('controller_connection', false);
     }
+  }
+}
+
+function scheduleTelemetry(immediate = false) {
+  const config = getRemoteAlertConfig();
+  if (!config.enabled || !config.workerUrl || !config.deviceToken) return;
+  if (telemetryTimer) clearTimeout(telemetryTimer);
+  const elapsed = Date.now() - lastTelemetrySentAt;
+  const delay = immediate ? 0 : Math.max(0, TELEMETRY_INTERVAL_MS - elapsed);
+  telemetryTimer = setTimeout(() => {
+    telemetryTimer = null;
+    void postTelemetrySnapshot(config);
+  }, delay);
+}
+
+async function postTelemetrySnapshot(config) {
+  if (telemetrySending) return scheduleTelemetry();
+  telemetrySending = true;
+  const telemetry = {};
+  for (const key of TELEMETRY_KEYS) {
+    if (store.data[key] === undefined) continue;
+    telemetry[key] = FLOAT_TELEMETRY_KEYS.has(key)
+      ? getFloatDisplayState(key, store.data[key])
+      : store.data[key];
+  }
+  try {
+    const response = await fetch(`${config.workerUrl}/api/v1/telemetry`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${config.deviceToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        deviceId: config.deviceId,
+        systemId: store.data.SystemID || null,
+        connection: store.connection,
+        sourceTime: new Date().toISOString(),
+        telemetry
+      })
+    });
+    if (!response.ok) throw new Error(`telemetry relay returned HTTP ${response.status}`);
+    lastTelemetrySentAt = Date.now();
+  } catch (error) {
+    if (Date.now() - lastTelemetryErrorAt > 60_000) {
+      store.log('error', `Remote status update failed: ${error.message}`);
+      lastTelemetryErrorAt = Date.now();
+    }
+  } finally {
+    telemetrySending = false;
   }
 }
 

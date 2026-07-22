@@ -4,6 +4,7 @@ import { spawn, spawnSync } from 'node:child_process';
 
 const relayUrl = 'http://127.0.0.1:8787';
 const ntfyMessages = [];
+const slackMessages = [];
 const runId = `integration-${Date.now()}`;
 const repoRoot = new URL('../..', import.meta.url);
 
@@ -25,12 +26,30 @@ const ntfy = http.createServer((request, response) => {
   });
 });
 
+const slack = http.createServer((request, response) => {
+  let body = '';
+  request.setEncoding('utf8');
+  request.on('data', chunk => { body += chunk; });
+  request.on('end', () => {
+    slackMessages.push(JSON.parse(body));
+    response.writeHead(200, { 'Content-Type': 'text/plain' });
+    response.end('ok');
+  });
+});
+
 await new Promise((resolve, reject) => {
   ntfy.once('error', reject);
   ntfy.listen(8790, '127.0.0.1', resolve);
 });
+await new Promise((resolve, reject) => {
+  slack.once('error', reject);
+  slack.listen(8791, '127.0.0.1', resolve);
+});
 
-const worker = spawn('wrangler', ['dev', '--config', 'worker/wrangler.jsonc', '--port', '8787'], {
+const worker = spawn('wrangler', [
+  'dev', '--config', 'worker/wrangler.jsonc', '--port', '8787',
+  '--var', 'SLACK_WEBHOOK_URL:http://127.0.0.1:8791'
+], {
   cwd: repoRoot,
   stdio: ['ignore', 'pipe', 'pipe']
 });
@@ -44,6 +63,9 @@ try {
   let response = await fetch(`${relayUrl}/health`);
   assert.equal(response.status, 200);
 
+  response = await postTelemetry();
+  assert.equal(response.status, 200);
+
   response = await postEvent('weir_ovf_active', `${runId}-active-unauthorized`, 'wrong');
   assert.equal(response.status, 401);
 
@@ -54,6 +76,8 @@ try {
   let result = await response.json();
   assert.equal(result.event.notification_status, 'sent');
   assert.equal(ntfyMessages.length, 1);
+  assert.equal(slackMessages.length, 1);
+  assert.match(slackMessages[0].text, /Weir OVF activated/);
   assert.equal(ntfyMessages[0].headers.priority, '5');
 
   response = await postEvent('weir_ovf_active', `${runId}-active-2`);
@@ -61,6 +85,7 @@ try {
   assert.equal(result.duplicate, true);
   assert.equal(result.event.notification_status, 'suppressed');
   assert.equal(ntfyMessages.length, 1);
+  assert.equal(slackMessages.length, 1);
 
   response = await postEvent('weir_ovf_active', `${runId}-active-1`);
   assert.equal(response.status, 200);
@@ -70,6 +95,7 @@ try {
   assert.equal(response.status, 200);
   result = await response.json();
   assert.equal(result.states.find(state => state.device_id === runId)?.active, 1);
+  assert.equal(result.devices.find(device => device.device_id === runId)?.telemetry?.Vacuum_STATE, 18.4);
 
   response = await postEvent('weir_ovf_recovered', `${runId}-recovered-1`);
   result = await response.json();
@@ -109,10 +135,12 @@ try {
   response = await fetch(`${relayUrl}/health`, { headers: { Origin: 'https://evil.example' } });
   assert.equal(response.status, 403);
 
-  console.log(`Worker integration passed: ${ntfyMessages.length} ntfy messages, duplicate suppression and acknowledgement verified.`);
+  assert.equal(slackMessages.length, ntfyMessages.length);
+  console.log(`Worker integration passed: ${ntfyMessages.length} ntfy + ${slackMessages.length} Slack messages, duplicate suppression and acknowledgement verified.`);
 } finally {
   worker.kill('SIGTERM');
   await new Promise(resolve => ntfy.close(resolve));
+  await new Promise(resolve => slack.close(resolve));
 }
 
 async function postEvent(type, idempotencyKey, token = 'local-device-token') {
@@ -120,6 +148,19 @@ async function postEvent(type, idempotencyKey, token = 'local-device-token') {
     method: 'POST',
     headers: { 'Idempotency-Key': idempotencyKey },
     body: JSON.stringify({ type, deviceId: runId, systemId: 'IDS TEST' })
+  });
+}
+
+function postTelemetry(token = 'local-device-token') {
+  return api('/api/v1/telemetry', token, {
+    method: 'POST',
+    body: JSON.stringify({
+      deviceId: runId,
+      systemId: 'IDS TEST',
+      connection: 'CONNECTED',
+      sourceTime: new Date().toISOString(),
+      telemetry: { SystemID: 'IDS TEST', Vacuum_STATE: 18.4, Run_MODE: 1, ignored_private_field: 'drop me' }
+    })
   });
 }
 

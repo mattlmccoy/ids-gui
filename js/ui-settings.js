@@ -180,7 +180,7 @@ function buildHTML() {
               </label>
             </div>
             <div class="small mb-3" style="color:var(--text-muted)">
-              Includes Weir/Supply overflow, firmware alarms, unexpected disconnects, and stale telemetry.
+              Includes Weir/Supply overflow, firmware alarms, unexpected disconnects, stale telemetry, and read-only mobile status.
               Repeated readings are suppressed; alerts are sent only after the configured debounce.
             </div>
             <div class="row g-2">

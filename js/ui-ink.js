@@ -1,14 +1,14 @@
 import store from './state.js';
 
 const STORAGE_KEY = 'ids-ink-check-v1';
-const DATA_VERSION = 1;
+const DATA_VERSION = 2;
 const REMINDER_SNOOZE_HOURS = 4;
 const DEFAULT_FAMILY_ID = 'IPA 25 wt%';
 const DEFAULTS = {
   activeFamily: DEFAULT_FAMILY_ID,
   ipaDensityGml: 0.786,
   reminderHours: 24,
-  defaultSampleVolumeUl: 10000,
+  defaultSampleVolumeUl: 1000,
   defaultBottleVolumeMl: 500
 };
 
@@ -34,6 +34,12 @@ export function initInkTab() {
 
 function buildHTML() {
   return `
+    <div class="alert alert-danger">
+      <div class="d-flex gap-2 align-items-start"><i class="bi bi-exclamation-octagon-fill"></i><div>
+        <strong>Uncalibrated model:</strong> density logging is valid, but the displayed carbon estimate and IPA add-back use an experimental relative-density approximation.
+        Do not dose production ink from this estimate alone until tomorrow's known-mixture calibration is complete.
+      </div></div>
+    </div>
     <div class="alert alert-warning d-none" id="ink-reminder-banner">
       <div class="d-flex flex-wrap align-items-center gap-2">
         <span><i class="bi bi-exclamation-triangle me-1"></i>Ink concentration check is due. Log a fresh sample before printing.</span>
@@ -69,11 +75,18 @@ function buildHTML() {
               </div>
               <div class="col-6">
                 <label class="form-label small mb-1">Sample Mass (g)</label>
-                <input type="number" min="0.001" step="0.001" class="form-control form-control-sm" id="ink-sample-mass-g" placeholder="e.g. 0.842">
+                <input type="number" min="0.001" step="0.001" class="form-control form-control-sm" id="ink-sample-mass-g" placeholder="e.g. 0.900 for 1 mL">
               </div>
               <div class="col-6">
                 <label class="form-label small mb-1">Current Ink Volume (mL)</label>
                 <input type="number" min="1" step="0.1" class="form-control form-control-sm" id="ink-bottle-volume-ml">
+              </div>
+              <div class="col-6">
+                <label class="form-label small mb-1">Sample Temperature (°C)</label>
+                <input type="number" min="0" max="80" step="0.1" class="form-control form-control-sm" id="ink-sample-temperature-c" placeholder="Recommended">
+              </div>
+              <div class="col-6 d-flex align-items-end">
+                <div class="small w-100 p-2 rounded border" id="ink-density-preview">Density preview: —</div>
               </div>
               <div class="col-12">
                 <label class="form-label small mb-1">Notes</label>
@@ -181,7 +194,7 @@ function buildHTML() {
             <span class="kpi-unit">g/mL</span>
           </div>
           <div class="kpi-tile">
-            <span class="kpi-label">Estimated Carbon</span>
+            <span class="kpi-label">Relative Carbon Estimate*</span>
             <span class="kpi-value" id="ink-est-carbon">--</span>
             <span class="kpi-unit">wt%</span>
           </div>
@@ -197,7 +210,7 @@ function buildHTML() {
           <div class="card-body">
             <div class="chart-container"><canvas id="ink-trend-chart"></canvas></div>
             <div class="small mt-2" style="color:var(--text-muted)">
-              Calculation assumes concentration drift is dominated by IPA evaporation and uses baseline sample density as the reference.
+              *Experimental until calibrated. Each baseline starts a new chronological segment; a newer bottle baseline no longer rewrites older results.
             </div>
           </div>
         </div>
@@ -214,6 +227,7 @@ function buildHTML() {
                     <th>Vol (mL)</th>
                     <th>Mass (g)</th>
                     <th>Density</th>
+                    <th>Temp (°C)</th>
                     <th>Carbon (wt%)</th>
                     <th>Bottle Vol (mL)</th>
                     <th>IPA Add (g)</th>
@@ -281,6 +295,8 @@ function bindEvents() {
   document.getElementById('btn-ink-apply-settings')?.addEventListener('click', onApplySettings);
   document.getElementById('btn-ink-calc-aliquot')?.addEventListener('click', computeAliquotAddback);
   document.getElementById('btn-ink-calc-target')?.addEventListener('click', computeTargetDilutionAddback);
+  document.getElementById('ink-sample-volume-ml')?.addEventListener('input', updateDensityPreview);
+  document.getElementById('ink-sample-mass-g')?.addEventListener('input', updateDensityPreview);
   document.getElementById('ink-family-filter')?.addEventListener('change', e => {
     inkState.settings.activeFamily = String(e.target.value || DEFAULT_FAMILY_ID);
     saveState();
@@ -317,6 +333,8 @@ function onLogSample() {
   const nominalAtSample = Number(document.getElementById('ink-sample-nominal-wt').value);
   const note = document.getElementById('ink-note').value.trim();
   const baseline = !!document.getElementById('ink-mark-baseline').checked;
+  const temperatureValue = document.getElementById('ink-sample-temperature-c').value;
+  const temperatureC = temperatureValue === '' ? null : Number(temperatureValue);
 
   if (!Number.isFinite(volumeMl) || volumeMl <= 0) {
     setInkStatus('Known sample volume must be > 0 mL.');
@@ -338,6 +356,14 @@ function onLogSample() {
     setInkStatus('Nominal wt% at sample must be > 0 and <= 95.');
     return;
   }
+  if (temperatureC !== null && (!Number.isFinite(temperatureC) || temperatureC < 0 || temperatureC > 80)) {
+    setInkStatus('Sample temperature must be between 0 and 80 °C, or left blank.');
+    return;
+  }
+
+  const measuredDensity = massG / volumeMl;
+  const quality = assessDensity(measuredDensity, inkState.settings.ipaDensityGml);
+  if (!quality.validForDosing && !confirm(`${quality.message}\n\nLog this measurement anyway for troubleshooting? IPA dosing will be disabled for it.`)) return;
 
   const volumeUl = volumeMl * 1000;
   const entry = {
@@ -348,6 +374,7 @@ function onLogSample() {
     nominalCarbonWtPctAtSample: nominalAtSample,
     sampleVolumeUl: volumeUl,
     sampleMassG: massG,
+    temperatureC,
     bottleVolumeMl,
     note,
     useAsBaseline: baseline
@@ -361,6 +388,8 @@ function onLogSample() {
   store.log('info', `Ink sample logged (${volumeMl.toFixed(3)} mL, ${massG.toFixed(3)} g).`);
   document.getElementById('ink-sample-mass-g').value = '';
   document.getElementById('ink-note').value = '';
+  document.getElementById('ink-sample-temperature-c').value = '';
+  updateDensityPreview();
 }
 
 function onClearLogs() {
@@ -373,7 +402,7 @@ function onClearLogs() {
 function onExportCSV() {
   if (!inkState.entries.length) return;
   const rows = buildComputedRows(getVisibleEntries());
-  let csv = 'Timestamp,InkFamily,NominalCarbon_wtPct_atSample,BottleState,SampleVolume_mL,SampleMass_g,Density_g_per_mL,EstimatedCarbon_wtPct,BottleVolume_mL,IPA_Add_g,IPA_Add_mL,BaselineRef,Notes\n';
+  let csv = 'Timestamp,InkFamily,NominalCarbon_wtPct_atSample,BottleState,SampleVolume_mL,SampleMass_g,Density_g_per_mL,SampleTemperature_C,Quality,RelativeEstimatedCarbon_wtPct,BottleVolume_mL,IPA_Add_g,IPA_Add_mL,BaselineRef,Notes\n';
   for (const r of rows) {
     const e = r.entry;
     csv += [
@@ -384,6 +413,8 @@ function onExportCSV() {
       fmt(e.sampleVolumeUl / 1000, 3),
       e.sampleMassG,
       fmt(r.density),
+      e.temperatureC ?? '',
+      r.quality.validForDosing ? 'plausible' : 'suspect',
       fmt(r.estimatedCarbonWtPct),
       e.bottleVolumeMl,
       fmt(r.ipaAddG),
@@ -417,6 +448,7 @@ function onApplySettings() {
 
 function applyDefaultsToForm() {
   document.getElementById('ink-mark-baseline').checked = true;
+  updateDensityPreview();
 }
 
 function renderAll() {
@@ -471,12 +503,17 @@ function renderSummaryAndTable() {
       <td>${fmt(r.entry.sampleVolumeUl / 1000, 3)}</td>
       <td>${fmt(r.entry.sampleMassG, 4)}</td>
       <td>${fmt(r.density, 4)}</td>
+      <td>${r.entry.temperatureC === null || r.entry.temperatureC === undefined ? '--' : fmt(r.entry.temperatureC, 1)}</td>
       <td>${fmt(r.estimatedCarbonWtPct, 2)}</td>
       <td>${fmt(r.entry.bottleVolumeMl, 1)}</td>
       <td>${fmt(r.ipaAddG, 2)}</td>
       <td>${fmt(r.ipaAddMl, 2)}</td>
     `;
     tbody.appendChild(tr);
+    if (!r.quality.validForDosing) {
+      tr.classList.add('table-warning');
+      tr.title = r.quality.message;
+    }
   }
 }
 
@@ -491,6 +528,10 @@ function computeAliquotAddback() {
   const latest = rows[rows.length - 1];
   if (!latest) {
     if (resultEl) resultEl.textContent = 'Log at least one sample first.';
+    return;
+  }
+  if (!latest.quality.validForDosing) {
+    if (resultEl) resultEl.textContent = `No dosing recommendation: ${latest.quality.message}`;
     return;
   }
   const settings = inkState.settings;
@@ -517,6 +558,10 @@ function computeTargetDilutionAddback() {
   const latest = rows[rows.length - 1];
   if (!latest) {
     if (resultEl) resultEl.textContent = 'Log at least one sample first.';
+    return;
+  }
+  if (!latest.quality.validForDosing) {
+    if (resultEl) resultEl.textContent = `No dosing recommendation: ${latest.quality.message}`;
     return;
   }
   const currentWtPct = latest.estimatedCarbonWtPct;
@@ -574,18 +619,23 @@ function renderChart() {
 }
 
 function buildComputedRows(entries) {
-  const source = Array.isArray(entries) ? entries : [];
-  const baselineEntry = findBaselineEntry(source);
-  const baselineDensity = baselineEntry ? computeDensity(baselineEntry) : null;
-  return source.map(entry => computeRow(entry, baselineDensity, inkState.settings));
+  const source = Array.isArray(entries) ? [...entries].sort(compareEntries) : [];
+  let baselineEntry = null;
+  return source.map(entry => {
+    if (!baselineEntry || entry.useAsBaseline) baselineEntry = entry;
+    return computeRow(entry, baselineEntry, inkState.settings);
+  });
 }
 
-function computeRow(entry, baselineDensity, settings) {
+function computeRow(entry, baselineEntry, settings) {
   const density = computeDensity(entry);
+  const baselineDensity = baselineEntry ? computeDensity(baselineEntry) : density;
   const base = baselineDensity || density;
   const ratio = base > 0 ? density / base : 1;
-  const nominalAtSample = Number(entry.nominalCarbonWtPctAtSample) > 0 ? Number(entry.nominalCarbonWtPctAtSample) : getActiveFamilyNominal();
+  const baselineNominal = Number(baselineEntry?.nominalCarbonWtPctAtSample);
+  const nominalAtSample = baselineNominal > 0 ? baselineNominal : getActiveFamilyNominal();
   const estimatedCarbonWtPct = Math.max(0, Math.min(95, nominalAtSample * ratio));
+  const quality = assessDensity(density, settings.ipaDensityGml);
   const add = computeAddbackForVolume(
     entry.bottleVolumeMl,
     density,
@@ -594,12 +644,12 @@ function computeRow(entry, baselineDensity, settings) {
     settings.ipaDensityGml
   );
   const { ipaAddG, ipaAddMl } = add;
-  return { entry, density, estimatedCarbonWtPct, ipaAddG, ipaAddMl };
+  return { entry, baselineEntry, density, estimatedCarbonWtPct, ipaAddG, ipaAddMl, quality };
 }
 
 function getVisibleEntries() {
   const active = String(inkState.settings.activeFamily || DEFAULT_FAMILY_ID);
-  return inkState.entries.filter(e => String(e.inkFamily || DEFAULT_FAMILY_ID) === active);
+  return inkState.entries.filter(e => String(e.inkFamily || DEFAULT_FAMILY_ID) === active).sort(compareEntries);
 }
 
 function getFamilyList() {
@@ -665,6 +715,41 @@ function findBaselineEntry(entries) {
     if (entries[i].useAsBaseline) return entries[i];
   }
   return entries[0] || null;
+}
+
+function compareEntries(a, b) {
+  return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+}
+
+function assessDensity(densityGml, ipaDensityGml) {
+  if (!Number.isFinite(densityGml) || densityGml <= 0) {
+    return { validForDosing: false, message: 'Density is not a positive finite value.' };
+  }
+  const lower = Number(ipaDensityGml) > 0 ? Number(ipaDensityGml) * 0.9 : 0.7;
+  if (densityGml < lower) {
+    return { validForDosing: false, message: `Measured density ${fmt(densityGml, 4)} g/mL is implausibly below the IPA reference. Recheck tare, sample volume, mass units, and bubbles.` };
+  }
+  if (densityGml > 2) {
+    return { validForDosing: false, message: `Measured density ${fmt(densityGml, 4)} g/mL is outside the expected tool range. Recheck units and sampling.` };
+  }
+  return { validForDosing: true, message: 'Density is within the provisional plausibility range.' };
+}
+
+function updateDensityPreview() {
+  const element = document.getElementById('ink-density-preview');
+  if (!element) return;
+  const volumeMl = Number(document.getElementById('ink-sample-volume-ml')?.value);
+  const massG = Number(document.getElementById('ink-sample-mass-g')?.value);
+  if (!(volumeMl > 0) || !(massG > 0)) {
+    element.textContent = 'Density preview: —';
+    element.className = 'small w-100 p-2 rounded border';
+    return;
+  }
+  const density = massG / volumeMl;
+  const quality = assessDensity(density, inkState?.settings?.ipaDensityGml || DEFAULTS.ipaDensityGml);
+  element.textContent = `Density: ${fmt(density, 4)} g/mL · ${quality.validForDosing ? 'plausible' : 'check inputs'}`;
+  element.className = `small w-100 p-2 rounded border ${quality.validForDosing ? 'text-success' : 'text-danger'}`;
+  element.title = quality.message;
 }
 
 function findBaselineRow(rows) {
@@ -934,6 +1019,7 @@ function normalizeState(state) {
         nominalCarbonWtPctAtSample: clampNum(e.nominalCarbonWtPctAtSample, 0.1, 95, 25),
         sampleVolumeUl: Number(e.sampleVolumeUl),
         sampleMassG: Number(e.sampleMassG),
+        temperatureC: e.temperatureC === null || e.temperatureC === undefined || e.temperatureC === '' ? null : Number(e.temperatureC),
         bottleVolumeMl: Number(e.bottleVolumeMl),
         note: String(e.note || ''),
         useAsBaseline: !!e.useAsBaseline
@@ -944,6 +1030,7 @@ function normalizeState(state) {
         Number.isFinite(e.sampleMassG) && e.sampleMassG > 0 &&
         Number.isFinite(e.bottleVolumeMl) && e.bottleVolumeMl > 0
       );
+    safe.entries.sort(compareEntries);
   }
   return safe;
 }

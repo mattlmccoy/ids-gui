@@ -45,6 +45,16 @@ const EVENT_DEFINITIONS = {
   }
 };
 
+const TELEMETRY_KEYS = new Set([
+  'SystemID', 'SoftwareRev', 'AlarmStatus', 'ErrorCode_STATE',
+  'Run_MODE', 'Purge_MODE', 'Flush_MODE', 'Drain_MODE', 'Bypass_MODE',
+  'Vacuum_STATE', 'Pressure_STATE', 'FluidTemperature_STATE',
+  'MainHeaterTemperature_STATE', 'AUXHeaterTemperature_STATE',
+  'SupplyFloat_STATE', 'WeirFloat_STATE', 'WasteFloat_STATE',
+  'SupplyOverflowFloat_STATE', 'WeirOverflowFloat_STATE',
+  'FlushFloat_STATE', 'ServiceFloat_STATE'
+]);
+
 export default {
   async fetch(request, env) {
     try {
@@ -67,6 +77,10 @@ async function route(request, env) {
   if (request.method === 'POST' && url.pathname === '/api/v1/events') {
     if (!(await authorized(request, env.DEVICE_TOKEN))) return unauthorized(request, env);
     return createEvent(request, env);
+  }
+  if (request.method === 'POST' && url.pathname === '/api/v1/telemetry') {
+    if (!(await authorized(request, env.DEVICE_TOKEN))) return unauthorized(request, env);
+    return updateTelemetry(request, env);
   }
   if (request.method === 'GET' && url.pathname === '/api/v1/events') {
     if (!(await authorized(request, env.VIEWER_TOKEN))) return unauthorized(request, env);
@@ -138,7 +152,12 @@ async function createEvent(request, env) {
 
   if (!stateDuplicate) {
     try {
-      await publishNtfy(env, definition, message);
+      const [ntfyResult, slackResult] = await Promise.allSettled([
+        publishNtfy(env, definition, message),
+        publishSlack(env, definition, message, location)
+      ]);
+      if (slackResult.status === 'rejected') console.error('Slack delivery failed', slackResult.reason);
+      if (ntfyResult.status === 'rejected') throw ntfyResult.reason;
       await env.DB.prepare("UPDATE events SET notification_status = 'sent' WHERE id = ?").bind(id).run();
     } catch (error) {
       console.error('ntfy delivery failed', error);
@@ -149,6 +168,66 @@ async function createEvent(request, env) {
 
   const event = await env.DB.prepare('SELECT * FROM events WHERE id = ?').bind(id).first();
   return json({ event, duplicate: stateDuplicate }, 201, request, env);
+}
+
+async function updateTelemetry(request, env) {
+  let body;
+  try { body = await request.json(); } catch (_) { return json({ error: 'Expected JSON body' }, 400, request, env); }
+  const deviceId = clean(body.deviceId, 80);
+  if (!deviceId) return json({ error: 'deviceId is required' }, 400, request, env);
+  const connection = ['CONNECTED', 'DISCONNECTED', 'CONNECTING', 'ERROR'].includes(body.connection)
+    ? body.connection : 'DISCONNECTED';
+  const telemetry = {};
+  if (body.telemetry && typeof body.telemetry === 'object' && !Array.isArray(body.telemetry)) {
+    for (const [key, value] of Object.entries(body.telemetry)) {
+      if (!TELEMETRY_KEYS.has(key)) continue;
+      if (value === null || typeof value === 'number' || typeof value === 'boolean') telemetry[key] = value;
+      else if (typeof value === 'string') telemetry[key] = value.slice(0, 120);
+    }
+  }
+  const now = new Date().toISOString();
+  const systemId = clean(body.systemId || telemetry.SystemID, 80, true);
+  const sourceTime = clean(body.sourceTime, 40, true);
+  await env.DB.prepare(`INSERT INTO device_status
+    (device_id, system_id, connection, telemetry_json, source_time, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(device_id) DO UPDATE SET
+      system_id = excluded.system_id,
+      connection = excluded.connection,
+      telemetry_json = excluded.telemetry_json,
+      source_time = excluded.source_time,
+      updated_at = excluded.updated_at`)
+    .bind(deviceId, systemId, connection, JSON.stringify(telemetry), sourceTime, now).run();
+  return json({ ok: true, deviceId, updatedAt: now }, 200, request, env);
+}
+
+async function publishSlack(env, definition, message, location) {
+  if (!env.SLACK_WEBHOOK_URL) return;
+  const color = definition.severity === 'urgent' ? '#dc3545' : definition.severity === 'warning' ? '#ffc107' : '#198754';
+  const fields = [
+    { type: 'mrkdwn', text: `*System*\n${escapeSlack(location)}` },
+    { type: 'mrkdwn', text: `*Status*\n${escapeSlack(definition.phase)}` }
+  ];
+  const blocks = [
+    { type: 'header', text: { type: 'plain_text', text: definition.title.slice(0, 150) } },
+    { type: 'section', text: { type: 'mrkdwn', text: escapeSlack(message) }, fields }
+  ];
+  if (env.DASHBOARD_URL) {
+    blocks.push({ type: 'actions', elements: [{ type: 'button', text: { type: 'plain_text', text: 'Open IDS dashboard' }, url: env.DASHBOARD_URL }] });
+  }
+  const response = await fetch(env.SLACK_WEBHOOK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text: `${definition.title}: ${message}`,
+      attachments: [{ color, blocks }]
+    })
+  });
+  if (!response.ok) throw new Error(`Slack returned HTTP ${response.status}`);
+}
+
+function escapeSlack(value) {
+  return String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 }
 
 async function publishNtfy(env, definition, message) {
@@ -176,14 +255,20 @@ async function listEvents(request, env, url) {
 }
 
 async function getStatus(request, env) {
-  const [states, latest] = await Promise.all([
+  const [states, latest, deviceRows] = await Promise.all([
     env.DB.prepare(`SELECT s.device_id, s.alert_key, s.active, s.updated_at, s.latest_event_id,
       e.system_id, e.event_type, e.title, e.message, e.severity, e.acknowledged_at, e.acknowledged_by
       FROM alert_states s JOIN events e ON e.id = s.latest_event_id
       ORDER BY s.device_id, s.alert_key`).all(),
-    env.DB.prepare('SELECT * FROM events ORDER BY created_at DESC LIMIT 20').all()
+    env.DB.prepare('SELECT * FROM events ORDER BY created_at DESC LIMIT 20').all(),
+    env.DB.prepare('SELECT * FROM device_status ORDER BY updated_at DESC').all()
   ]);
-  return json({ states: states.results || [], events: latest.results || [], generatedAt: new Date().toISOString() }, 200, request, env);
+  const devices = (deviceRows.results || []).map(row => {
+    let telemetry = {};
+    try { telemetry = JSON.parse(row.telemetry_json || '{}'); } catch (_) { /* retain empty telemetry */ }
+    return { ...row, telemetry, telemetry_json: undefined };
+  });
+  return json({ states: states.results || [], events: latest.results || [], devices, generatedAt: new Date().toISOString() }, 200, request, env);
 }
 
 async function acknowledgeEvent(request, env, id) {

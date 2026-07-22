@@ -53,7 +53,18 @@
       <span class="small text-muted" id="remote-updated">Not connected</span>
       <span class="badge text-bg-secondary" id="remote-connection-state">Offline</span>
     </div>
-    <section class="row g-3 mb-3" id="remote-status-cards"></section>
+    <section class="mb-3">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h2 class="h6 mb-0"><i class="bi bi-speedometer2 me-1"></i>Live systems</h2>
+        <span class="small text-muted">Read-only · updates every 15 seconds</span>
+      </div>
+      <div class="row g-3" id="remote-device-cards"></div>
+    </section>
+
+    <section class="mb-3">
+      <h2 class="h6 mb-2"><i class="bi bi-shield-exclamation me-1"></i>Alert conditions</h2>
+      <div class="row g-3" id="remote-status-cards"></div>
+    </section>
 
     <section class="dash-card">
       <div class="card-header d-flex justify-content-between align-items-center">
