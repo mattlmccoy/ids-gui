@@ -4,7 +4,7 @@ import store from './state.js';
 import { formatFileDate } from './utils.js';
 import { HEATER_KEYS, isDataKeyVisible } from './heater-visibility.js';
 
-const MAX_RECORDS = 3600; // ~1 hour at 1 sample/sec
+const MAX_RECORDS = 18_000; // one hour at the fastest supported 200 ms poll rate
 let sessionData = [];      // Array of { timestamp, ...allKeys }
 let allKeysSet = new Set();
 

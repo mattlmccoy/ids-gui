@@ -14,7 +14,7 @@ Major feature and reliability release introducing the new Ink Check workflow, cr
   - bottle state
   - ink family
   - nominal wt% at sample
-  - known volume (uL)
+  - known volume (mL)
   - sample mass (g)
   - current bottle volume (mL)
   - baseline flag and notes

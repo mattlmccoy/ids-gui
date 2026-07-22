@@ -3,6 +3,9 @@
 import store from './state.js';
 import { send } from './serial.js';
 import { humanizeKey, unitForKey, flashSentButton } from './utils.js';
+import { FLOATS, formatFloatState } from './float-state.js';
+
+const FLOAT_KEYS = new Set(FLOATS.map(f => f.key));
 
 /* ---------- Category Definitions ---------- */
 const CATEGORIES = [
@@ -10,26 +13,35 @@ const CATEGORIES = [
     id: 'pumps', title: 'Pumps', icon: 'bi-water',
     keys: [
       'InputPump_STATE', 'RecirculationPump_STATE', 'DrainPump_STATE',
-      'BulkSupplyPump_STATE', 'VacuumPump_STATE', 'FlushPump_STATE',
+      'BulkSupplyPump_STATE', 'VacuumPump_STATE', 'flushPump_STATE',
+      'ServiceRecirculationPump_STATE',
       'InputPumpSpeed_SETPOINT', 'FlushPumpSpeed_SETPOINT',
       'DrainPumpSpeed_SETPOINT', 'ServiceRecirculationPumpSpeed_SETPOINT'
     ]
   },
   {
     id: 'valves', title: 'Valves', icon: 'bi-diagram-3',
-    keys: ['ManifoldValve1_STATE', 'DrainValve_STATE', 'BulkSupplyValve_STATE']
+    keys: [
+      'ManifoldValve1_STATE', 'ManifoldValve2_STATE', 'DrainValve_STATE',
+      'BulkSupplyValve_STATE', 'BypassValve_STATE', 'flushValve_STATE',
+      'ServiceInputValve_STATE', 'serviceRecirculationValve_STATE'
+    ]
   },
   {
     id: 'temperatures', title: 'Temperatures', icon: 'bi-thermometer-half',
     keys: [
       'FluidTemperature_STATE', 'MainHeaterTemperature_STATE',
       'AUXHeaterTemperature_STATE', 'MainHeaterSSR_STATE', 'AUXHeaterSSR_STATE',
+      'ServiceTemperature_STATE', 'ServiceHeaterTemperature_STATE', 'ServiceHeaterSSR_STATE',
       'Temperature_SETPOINT', 'TemperatureMAX_SETPOINT', 'HeaterTemperature_SETPOINT'
     ]
   },
   {
     id: 'pressure', title: 'Pressure / Vacuum', icon: 'bi-speedometer',
-    keys: ['Vacuum_STATE', 'Vacuum_SETPOINT', 'Pressure_STATE', 'PressureMAX_SETPOINT']
+    keys: [
+      'Vacuum_STATE', 'Vacuum_SETPOINT', 'Pressure_STATE', 'PressureMAX_SETPOINT',
+      'ServiceVacuum_STATE'
+    ]
   },
   {
     id: 'floats', title: 'Float Switches', icon: 'bi-life-preserver',
@@ -51,7 +63,7 @@ const CATEGORIES = [
   },
   {
     id: 'modes', title: 'Modes', icon: 'bi-toggles',
-    keys: ['AlarmStatus', 'ErrorCode_STATE']
+    keys: ['Run_MODE', 'Purge_MODE', 'Flush_MODE', 'Drain_MODE', 'Bypass_MODE', 'Service_MODE', 'AlarmStatus', 'ErrorCode_STATE']
   },
   {
     id: 'system', title: 'System', icon: 'bi-cpu',
@@ -66,6 +78,7 @@ export function initMonitorTab() {
   panel.innerHTML = buildHTML();
   bindEvents();
   store.on('data', updateMonitor);
+  store.on('float-config', () => updateMonitor(store.data));
 }
 
 function buildHTML() {
@@ -172,7 +185,10 @@ function updateMonitor(data) {
     for (const key of cat.keys) {
       if (data[key] === undefined) continue;
       count++;
-      rows.push(`<tr><td>${humanizeKey(key)}</td><td>${key}</td><td>${data[key]}${unitForKey(key)}</td></tr>`);
+      const display = FLOAT_KEYS.has(key)
+        ? `${formatFloatState(key, data[key])} <span class="text-muted">(raw ${data[key]})</span>`
+        : `${data[key]}${unitForKey(key)}`;
+      rows.push(`<tr><td>${humanizeKey(key)}</td><td>${key}</td><td>${display}</td></tr>`);
     }
     tbody.innerHTML = rows.join('');
     const badge = document.getElementById(`mon-count-${cat.id}`);

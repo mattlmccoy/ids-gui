@@ -7,6 +7,7 @@ import { decodeAlarmStatus, isActiveError } from './errors.js';
 import { CONFIRMATIONS, confirm } from './ui-dialogs.js';
 import { getHeaterVisibility, setHeaterVisibility, isHeaterVisible, shouldSuppressHeaterError } from './heater-visibility.js';
 import { loadNominalConfig } from './nominal-config.js';
+import { FLOATS, getFloatDisplayState, formatFloatState } from './float-state.js';
 
 /* ---------- Setpoint Definitions ---------- */
 const SETPOINTS = [
@@ -34,23 +35,16 @@ const PUMPS = [
   { key: 'DrainPump_STATE',        label: 'Drain Pump' },
   { key: 'BulkSupplyPump_STATE',   label: 'Bulk Supply' },
   { key: 'VacuumPump_STATE',       label: 'Vacuum Pump' },
-  { key: 'FlushPump_STATE',        label: 'Flush Pump' },
+  { key: 'flushPump_STATE',        label: 'Flush Pump' },
 ];
 
 const VALVES = [
   { key: 'ManifoldValve1_STATE', label: 'Manifold Valve' },
+  { key: 'ManifoldValve2_STATE', label: 'Manifold Valve 2' },
   { key: 'DrainValve_STATE',     label: 'Drain Valve' },
   { key: 'BulkSupplyValve_STATE', label: 'Bulk Supply Valve' },
-];
-
-const FLOATS = [
-  { key: 'SupplyFloat_STATE',         label: 'Supply' },
-  { key: 'WeirFloat_STATE',           label: 'Weir' },
-  { key: 'WasteFloat_STATE',          label: 'Waste' },
-  { key: 'SupplyOverflowFloat_STATE', label: 'Supply OVF' },
-  { key: 'WeirOverflowFloat_STATE',   label: 'Weir OVF' },
-  { key: 'FlushFloat_STATE',          label: 'Flush' },
-  { key: 'ServiceFloat_STATE',        label: 'Service' },
+  { key: 'BypassValve_STATE', label: 'Bypass Valve' },
+  { key: 'flushValve_STATE', label: 'Flush Valve' },
 ];
 
 const HEATERS = [
@@ -75,6 +69,7 @@ export function initOperationTab() {
     if (store.alarmRaw) updateErrorCard(store.alarmRaw);
     updateAlarmBanner({ raw: store.alarmRaw || '' });
   });
+  store.on('float-config', () => updateDisplay(store.data));
 }
 
 const modeCache = {
@@ -327,6 +322,7 @@ function buildHTML() {
               <div class="indicator-row">
                 <span class="state-dot off" id="ind-${f.key}"></span>
                 <span class="ind-label">${f.label}</span>
+                <span class="ind-value" id="ind-value-${f.key}">--</span>
               </div>
             `).join('')}
           </div>
@@ -430,6 +426,11 @@ function bindEvents() {
       const input = document.getElementById(`input-${key}`);
       const val = input.value.trim();
       if (val === '') return;
+      if (!input.checkValidity()) {
+        input.reportValidity();
+        store.log('warning', `Rejected out-of-range value for ${key}: ${val}`);
+        return;
+      }
       pushHistory(setpointHistory, key, val);
       refreshValueChips(key);
       send(`{"${key}":"${val}"}`);
@@ -561,11 +562,19 @@ function updateDisplay(data) {
   }
 
   // Binary indicators
-  const allInds = [...PUMPS, ...VALVES, ...FLOATS];
+  const allInds = [...PUMPS, ...VALVES];
   for (const ind of allInds) {
     const el = document.getElementById(`ind-${ind.key}`);
     if (!el || data[ind.key] === undefined) continue;
     el.className = 'state-dot ' + (parseInt(data[ind.key]) === 1 ? 'on' : 'off');
+  }
+  for (const ind of FLOATS) {
+    const el = document.getElementById(`ind-${ind.key}`);
+    const valueEl = document.getElementById(`ind-value-${ind.key}`);
+    if (!el || data[ind.key] === undefined) continue;
+    const state = getFloatDisplayState(ind.key, data[ind.key]);
+    el.className = 'state-dot ' + (state === 1 ? 'on' : 'off');
+    if (valueEl) valueEl.textContent = formatFloatState(ind.key, data[ind.key]);
   }
   for (const h of HEATERS) {
     const el = document.getElementById(`ind-${h.key}`);
@@ -793,6 +802,14 @@ async function sendAllConfigValues(buttonEl) {
   const statusEl = document.getElementById('config-status');
   if (store.connection !== 'CONNECTED') {
     if (statusEl) statusEl.textContent = 'Connect to the controller before using Send All.';
+    return;
+  }
+
+  const invalid = Array.from(document.querySelectorAll('[id^="set-"], [id^="input-"]'))
+    .filter(input => input.value?.trim() && !input.checkValidity());
+  if (invalid.length > 0) {
+    invalid[0].reportValidity();
+    if (statusEl) statusEl.textContent = `Correct ${invalid.length} out-of-range value${invalid.length === 1 ? '' : 's'} before sending.`;
     return;
   }
 

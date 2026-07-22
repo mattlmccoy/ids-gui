@@ -18,7 +18,7 @@ Implemented in:
 ### 2.1 Log Sample Inputs
 Per sample:
 - `Bottle State`: `brand_new` or `opened`
-- `Known Volume (uL)`
+- `Known Volume (mL)` in GUI (stored internally as `sampleVolumeUl` for compatibility)
 - `Ink Family` (example: `IPA 25 wt%`)
 - `Nominal wt% (sample)`
 - `Sample Mass (g)`

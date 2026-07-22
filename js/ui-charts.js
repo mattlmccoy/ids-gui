@@ -3,8 +3,10 @@
 import store from './state.js';
 import { isDataKeyVisible } from './heater-visibility.js';
 import { getPollIntervalMs, setPollIntervalMs, getNominalPollIntervalMs } from './serial.js';
+import { FLOATS, getFloatDisplayState, formatFloatState } from './float-state.js';
 
-const MAX_POINTS = 3600;
+const MAX_POINTS = 18_000; // one hour at the fastest supported 200 ms poll rate
+const FLOAT_TRACKS_KEY = 'ids-show-float-tracks';
 const TIME_WINDOWS = [
   { label: '1m',  ms: 60_000 },
   { label: '5m',  ms: 300_000 },
@@ -29,9 +31,11 @@ const PRESSURE_TRACES = [
 let dataBuffer = [];
 let tempChart = null;
 let pressureChart = null;
+let floatChart = null;
 let paused = false;
 let windowMs = TIME_WINDOWS[1].ms;
 let maxObservedPressure = 0;
+let showFloatTracks = readFloatTracksPreference();
 
 export function initChartsTab() {
   const panel = document.getElementById('panel-trending');
@@ -40,6 +44,18 @@ export function initChartsTab() {
   bindEvents();
   store.on('data', onData);
   store.on('heater-visibility', refreshCharts);
+  store.on('float-config', () => {
+    updateFloatStatus(store.data);
+    refreshCharts();
+  });
+  document.getElementById('tab-trending')?.addEventListener('shown.bs.tab', () => {
+    requestAnimationFrame(() => {
+      tempChart?.resize();
+      pressureChart?.resize();
+      if (showFloatTracks) floatChart?.resize();
+      refreshCharts();
+    });
+  });
 }
 
 function buildHTML() {
@@ -64,7 +80,22 @@ function buildHTML() {
       <input type="number" id="poll-interval-ms" min="200" max="5000" step="50" class="form-control form-control-sm" style="width:92px">
       <button class="btn-control btn-connect" id="btn-poll-apply" style="padding:0.25rem 0.6rem;font-size:0.75rem">Apply</button>
       <button class="btn-control btn-disconnect" id="btn-poll-nominal" style="padding:0.25rem 0.6rem;font-size:0.75rem">Nominal</button>
+      <span style="width:1px;height:20px;background:var(--border-color)"></span>
+      <div class="form-check form-switch mb-0">
+        <input class="form-check-input" type="checkbox" role="switch" id="toggle-float-tracks"
+               ${showFloatTracks ? 'checked' : ''}>
+        <label class="form-check-label small" for="toggle-float-tracks">Graph float states</label>
+      </div>
       <span class="ms-auto" style="color:var(--text-muted);font-size:0.75rem" id="chart-point-count">0 points</span>
+    </div>
+    <div class="float-status-strip mb-3" aria-label="Current float switch status">
+      ${FLOATS.map(f => `
+        <div class="float-status-chip" id="float-status-${f.key}">
+          <span class="state-dot off"></span>
+          <span>${f.label}</span>
+          <strong>--</strong>
+        </div>
+      `).join('')}
     </div>
     <div class="row g-3">
       <div class="col-lg-6">
@@ -82,6 +113,17 @@ function buildHTML() {
             <div class="chart-container"><canvas id="chart-pressure"></canvas></div>
             <div class="small mt-2" style="color:var(--text-muted)">
               Vacuum setpoint is shown in controller raw percent scale. Pressure axis is fixed to readable psi range.
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 ${showFloatTracks ? '' : 'd-none'}" id="float-track-card">
+        <div class="dash-card accent-cyan">
+          <div class="card-header"><i class="bi bi-toggles me-1"></i> Float State History</div>
+          <div class="card-body">
+            <div class="chart-container chart-container-floats"><canvas id="chart-floats"></canvas></div>
+            <div class="small mt-2" style="color:var(--text-muted)">
+              Each lane steps between OFF / DOWN and ON / UP. Raw firmware samples remain unchanged in exported data.
             </div>
           </div>
         </div>
@@ -181,6 +223,58 @@ function createCharts() {
     }
   });
   syncPressureAxisVisibility(pressureChart);
+
+  floatChart = new Chart(document.getElementById('chart-floats'), {
+    type: 'line',
+    data: {
+      datasets: FLOATS.map(f => ({
+        label: f.label,
+        borderColor: f.color,
+        backgroundColor: f.color,
+        borderWidth: 2,
+        pointRadius: 0,
+        stepped: true,
+        spanGaps: true,
+        data: []
+      }))
+    },
+    options: {
+      ...commonOpts,
+      interaction: { mode: 'nearest', axis: 'x', intersect: false },
+      scales: {
+        x: commonOpts.scales.x,
+        y: {
+          min: -0.35,
+          max: FLOATS.length * 2 - 0.65,
+          grid: { color: gridColor },
+          afterBuildTicks: axis => {
+            axis.ticks = Array.from({ length: FLOATS.length * 2 }, (_, value) => ({ value }));
+          },
+          ticks: {
+            color: tickColor,
+            font: { size: 9 },
+            callback: value => {
+              const index = Math.floor(Number(value) / 2);
+              const f = FLOATS[index];
+              if (!f) return '';
+              return `${f.label} ${Number(value) % 2 ? 'ON / UP' : 'OFF / DOWN'}`;
+            }
+          }
+        }
+      },
+      plugins: {
+        ...commonOpts.plugins,
+        tooltip: {
+          callbacks: {
+            label: item => {
+              const f = FLOATS[item.datasetIndex];
+              return `${f.label}: ${Math.round(item.parsed.y) % 2 ? 'ON / UP' : 'OFF / DOWN'}`;
+            }
+          }
+        }
+      }
+    }
+  });
 }
 
 function bindEvents() {
@@ -198,7 +292,11 @@ function bindEvents() {
     this.innerHTML = paused ? '<i class="bi bi-play-fill me-1"></i>Resume' : '<i class="bi bi-pause-fill me-1"></i>Pause';
   });
 
-  document.getElementById('btn-chart-clear').addEventListener('click', () => { dataBuffer = []; refreshCharts(); });
+  document.getElementById('btn-chart-clear').addEventListener('click', () => {
+    dataBuffer = [];
+    maxObservedPressure = 0;
+    refreshCharts();
+  });
   const pollInput = document.getElementById('poll-interval-ms');
   const pollApply = document.getElementById('btn-poll-apply');
   const pollNominal = document.getElementById('btn-poll-nominal');
@@ -216,9 +314,19 @@ function bindEvents() {
     const next = setPollIntervalMs(getNominalPollIntervalMs());
     if (pollInput) pollInput.value = String(next);
   });
+  document.getElementById('toggle-float-tracks')?.addEventListener('change', e => {
+    showFloatTracks = e.target.checked;
+    try { localStorage.setItem(FLOAT_TRACKS_KEY, String(showFloatTracks)); } catch (_) { /* ignore */ }
+    document.getElementById('float-track-card')?.classList.toggle('d-none', !showFloatTracks);
+    if (showFloatTracks) {
+      refreshCharts();
+      requestAnimationFrame(() => floatChart?.resize());
+    }
+  });
 }
 
 function onData(data) {
+  updateFloatStatus(data);
   if (paused) return;
   const point = { timestamp: Date.now() };
   const p = parseFloat(data.Pressure_STATE);
@@ -230,6 +338,11 @@ function onData(data) {
       point[t.key] = parseFloat(data[t.key]);
       if (!isNaN(point[t.key])) hasValue = true;
     }
+  }
+  for (const f of FLOATS) {
+    if (data[f.key] === undefined) continue;
+    point[f.key] = data[f.key];
+    hasValue = true;
   }
   if (!hasValue) return;
   dataBuffer.push(point);
@@ -256,6 +369,15 @@ function refreshCharts() {
   updatePressureAxisRange();
   syncPressureAxisVisibility(pressureChart);
   pressureChart.update('none');
+
+  if (showFloatTracks && floatChart) {
+    FLOATS.forEach((f, i) => {
+      floatChart.data.datasets[i].data = visible
+        .filter(p => p[f.key] !== undefined && getFloatDisplayState(f.key, p[f.key]) !== null)
+        .map(p => ({ x: p.timestamp, y: i * 2 + getFloatDisplayState(f.key, p[f.key]) }));
+    });
+    floatChart.update('none');
+  }
 }
 
 export function getChartData() { return dataBuffer; }
@@ -282,4 +404,21 @@ function syncPressureAxisVisibility(chart) {
   chart.options.scales.yVacuum.display = hasVisibleForAxis('yVacuum');
   chart.options.scales.ySetpoint.display = hasVisibleForAxis('ySetpoint');
   chart.options.scales.yPressure.display = hasVisibleForAxis('yPressure');
+}
+
+function updateFloatStatus(data) {
+  for (const f of FLOATS) {
+    if (data[f.key] === undefined) continue;
+    const chip = document.getElementById(`float-status-${f.key}`);
+    if (!chip) continue;
+    const state = getFloatDisplayState(f.key, data[f.key]);
+    const dot = chip.querySelector('.state-dot');
+    const text = chip.querySelector('strong');
+    if (dot) dot.className = `state-dot ${state === 1 ? 'on' : 'off'}`;
+    if (text) text.textContent = formatFloatState(f.key, data[f.key]);
+  }
+}
+
+function readFloatTracksPreference() {
+  try { return localStorage.getItem(FLOAT_TRACKS_KEY) === 'true'; } catch (_) { return false; }
 }
