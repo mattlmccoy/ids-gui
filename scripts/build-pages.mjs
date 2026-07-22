@@ -41,6 +41,25 @@ fs.writeFileSync(path.join(output, 'build-info.json'), JSON.stringify({
 const builtIndex = path.join(output, 'index.html');
 fs.writeFileSync(builtIndex, fs.readFileSync(builtIndex, 'utf8')
   .replace('<meta name="ids-build-commit" content="local">', `<meta name="ids-build-commit" content="${buildCommit}">`)
-  .replace("./js/app.js?v=local", `./js/app.js?v=${buildCommit}`));
+  .replace("./js/app.js?v=local", `./js/app.js?v=${buildCommit}`)
+  .replace('href="css/styles.css"', `href="css/styles.css?v=${buildCommit}"`));
+
+// A new query on app.js alone is not enough: browsers may reuse its nested
+// modules from the HTTP cache. Stamp every local module edge so one deployment
+// always resolves to one complete, internally consistent JavaScript build.
+const jsOutput = path.join(output, 'js');
+for (const filename of fs.readdirSync(jsOutput).filter(name => name.endsWith('.js'))) {
+  const target = path.join(jsOutput, filename);
+  const source = fs.readFileSync(target, 'utf8');
+  const versioned = source
+    .replace(/(\bfrom\s+['"])(\.{1,2}\/[^'"]+\.js)(['"])/g, `$1$2?v=${buildCommit}$3`)
+    .replace(/(\bimport\s*\(\s*['"])(\.{1,2}\/[^'"]+\.js)(['"]\s*\))/g, `$1$2?v=${buildCommit}$3`);
+  fs.writeFileSync(target, versioned);
+}
+
+const builtRemote = path.join(output, 'remote.html');
+fs.writeFileSync(builtRemote, fs.readFileSync(builtRemote, 'utf8')
+  .replace('href="css/styles.css"', `href="css/styles.css?v=${buildCommit}"`)
+  .replace('src="js/remote-dashboard.js"', `src="js/remote-dashboard.js?v=${buildCommit}"`));
 
 console.log(`Pages artifact created at ${output}`);

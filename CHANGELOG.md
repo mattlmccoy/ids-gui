@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## 2026-07-22
+
+### Added
+- Safety-gated automated commissioning checks for Flush, Drain, Bypass, and an optional
+  Run/vacuum-response sequence, with live readback evaluation and an operator stop control.
+- Unit coverage for command allowlisting, alarm gating, readback matching, shutdown command
+  generation, test selection, and vacuum-response evaluation.
+
+### Fixed
+- GitHub Pages now assigns one deployment version to every nested JavaScript import and the
+  main stylesheet, preventing a fresh entry point from loading stale Settings modules.
+- Commissioning now requires a known clear alarm status and stops on alarms, disconnects,
+  timeouts, failures, or operator aborts, then requests the all-modes-OFF baseline.
+
 ## 2026-02-18
 
 ### Added

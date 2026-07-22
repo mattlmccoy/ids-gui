@@ -2,6 +2,11 @@
 
 import store from './state.js';
 import { FLOATS, formatFloatState } from './float-state.js';
+import { send } from './serial.js';
+import {
+  binaryMatches, hasActiveAlarm, modeCommand, numericMatches, safeShutdownCommands,
+  selectedCircuitTests, setpointCommand, vacuumResponse
+} from './commissioning-automation.js';
 
 const STORAGE_KEY = 'ids-lab-certification-v2';
 const OBSERVATION_SECONDS = 10;
@@ -42,6 +47,7 @@ const TESTS = [
 
 let state = loadState();
 let renderTimer = null;
+let automation = createAutomationState();
 
 export function initValidationTab() {
   const panel = document.getElementById('panel-validation');
@@ -49,7 +55,10 @@ export function initValidationTab() {
   panel.innerHTML = buildShell();
   bindEvents(panel);
   store.on('data', data => observeData(panel, data));
-  store.on('connection', connection => observeConnection(panel, connection));
+  store.on('connection', connection => {
+    if (automation.status === 'running' && connection !== 'CONNECTED') stopAutomation('Controller disconnected');
+    observeConnection(panel, connection);
+  });
   store.on('command-sent', command => recordTimeline('command', 'outbound', command));
   store.on('error', payload => recordTimeline('alarm', 'AlarmStatus', payload?.raw));
   render(panel);
@@ -57,7 +66,10 @@ export function initValidationTab() {
     if (state.status === 'running') analyzeAll();
     render(panel);
   }, 1000);
-  window.addEventListener('beforeunload', () => clearInterval(renderTimer), { once: true });
+  window.addEventListener('beforeunload', () => {
+    clearInterval(renderTimer);
+    if (automation.status === 'running') stopAutomation('Page closed');
+  }, { once: true });
 }
 
 function presence(id, category, label, instruction, key) {
@@ -79,6 +91,9 @@ function buildShell() {
 
 function bindEvents(panel) {
   panel.addEventListener('click', event => {
+    const commissioningAction = event.target.closest('[data-commissioning-action]')?.dataset.commissioningAction;
+    if (commissioningAction === 'run') return startAutomation(panel);
+    if (commissioningAction === 'stop') return stopAutomation('Stopped by operator').finally(() => render(panel));
     const action = event.target.closest('[data-validation-action]')?.dataset.validationAction;
     if (!action) return;
     if (action === 'start') return startSession(panel, false);
@@ -93,6 +108,13 @@ function bindEvents(panel) {
     render(panel);
   });
   panel.addEventListener('change', event => {
+    const option = event.target.dataset.commissioningOption;
+    if (option) {
+      if (event.target.type === 'checkbox') automation.config[option] = event.target.checked;
+      else automation.config[option] = Number(event.target.value);
+      render(panel);
+      return;
+    }
     if (event.target.id === 'validation-tester') state.meta.tester = event.target.value.slice(0, 80);
     if (event.target.id === 'validation-location') state.meta.location = event.target.value.slice(0, 80);
     if (event.target.id === 'validation-note') {
@@ -129,6 +151,9 @@ function markServiced(panel) {
 }
 
 function observeData(panel, data) {
+  if (automation.status === 'running' && hasActiveAlarm(data)) {
+    stopAutomation(`Firmware alarm became active (${data.AlarmStatus ?? data.ErrorCode_STATE})`);
+  }
   if (state.status !== 'running') return;
   const now = new Date().toISOString();
   state.telemetry.frames += 1;
@@ -258,6 +283,165 @@ function finishCertification() {
   saveState();
 }
 
+function createAutomationState() {
+  return {
+    status: 'idle', abort: false, current: '', log: [],
+    config: {
+      flush: true, drain: true, bypass: true, vacuum: false,
+      vacuumSetpoint: 28, flowSetpoint: 50, minimumVacuumChange: 1, dwellSeconds: 4,
+      plumbingReady: false, estopReady: false, fluidReady: false, permission: false
+    }
+  };
+}
+
+function automationReady() {
+  const c = automation.config;
+  const alarmKnown = store.data.AlarmStatus !== undefined || store.data.ErrorCode_STATE !== undefined;
+  const numbersValid = inRange(c.dwellSeconds, 2, 30) && (!c.vacuum
+    || (inRange(c.vacuumSetpoint, 0, 100) && inRange(c.flowSetpoint, 0, 100) && inRange(c.minimumVacuumChange, 0, 500)));
+  return store.connection === 'CONNECTED' && alarmKnown && !store.replayActive && !hasActiveAlarm(store.data) && numbersValid
+    && c.plumbingReady && c.estopReady && c.fluidReady && c.permission
+    && (selectedCircuitTests(c).length > 0 || c.vacuum);
+}
+
+async function startAutomation(panel) {
+  if (automation.status === 'running' || !automationReady()) return;
+  const selected = selectedCircuitTests(automation.config).map(test => test.label);
+  if (automation.config.vacuum) selected.push('Run / vacuum response');
+  if (!window.confirm(`This will command the controller and physically actuate: ${selected.join(', ')}. Stay at the machine with the emergency stop accessible. Continue?`)) return;
+  automation.status = 'running'; automation.abort = false; automation.log = [];
+  automationLog('info', 'Automation armed by local operator.'); render(panel);
+  try {
+    automation.current = 'Establishing safe baseline';
+    await safeShutdown();
+    await waitForReadback(data => binaryMatches(data, ['Run_MODE', 'Purge_MODE', 'Flush_MODE', 'Drain_MODE', 'Bypass_MODE'], false), 8000, 'all operating modes OFF');
+    for (const test of selectedCircuitTests(automation.config)) await runCircuitTest(test, panel);
+    if (automation.config.vacuum) await runVacuumTest(panel);
+    automation.status = 'complete'; automation.current = '';
+    automationLog('success', 'Electronic commissioning sequence passed. Complete the physical confirmations below.');
+  } catch (error) {
+    automation.status = automation.abort ? 'stopped' : 'failed';
+    automationLog(automation.abort ? 'warning' : 'danger', error.message);
+  } finally {
+    await safeShutdown(); automation.current = ''; render(panel);
+  }
+}
+
+async function runCircuitTest(test, panel) {
+  assertAutomationSafe(); automation.current = `${test.label}: commanding ON`;
+  automationLog('info', `${test.label}: ON command sent.`); render(panel);
+  await sendRequired(modeCommand(test.mode, true));
+  await waitForReadback(data => binaryMatches(data, [test.mode, ...test.outputs], true), 10000, `${test.mode} and ${test.outputs.join(', ')} ON`);
+  automationLog('success', `${test.label}: ON readbacks confirmed.`);
+  await interruptibleDelay(automation.config.dwellSeconds * 1000);
+  automation.current = `${test.label}: commanding OFF`; render(panel);
+  await sendRequired(modeCommand(test.mode, false));
+  await waitForReadback(data => binaryMatches(data, [test.mode, ...test.outputs], false), 10000, `${test.mode} and ${test.outputs.join(', ')} OFF`);
+  automationLog('success', `${test.label}: OFF readbacks confirmed.`);
+}
+
+async function runVacuumTest(panel) {
+  assertAutomationSafe();
+  const c = automation.config; const originalVacuum = store.data.Vacuum_SETPOINT; const originalFlow = store.data.Flow_SETPOINT;
+  const baseline = Number(store.data.Vacuum_STATE);
+  if (!Number.isFinite(baseline)) throw new Error('Vacuum response test cannot start: Vacuum_STATE is unavailable.');
+  automation.current = 'Run / vacuum response'; render(panel);
+  automationLog('info', `Applying raw setpoints: vacuum ${c.vacuumSetpoint}%, flow ${c.flowSetpoint}%.`);
+  try {
+    await sendRequired(setpointCommand('Vacuum_SETPOINT', c.vacuumSetpoint));
+    await sendRequired(setpointCommand('Flow_SETPOINT', c.flowSetpoint));
+    await waitForReadback(data => numericMatches(data.Vacuum_SETPOINT, c.vacuumSetpoint) && numericMatches(data.Flow_SETPOINT, c.flowSetpoint), 8000, 'vacuum and flow setpoint echoes');
+    await sendRequired(modeCommand('Run_MODE', true));
+    await waitForReadback(data => binaryMatches(data, ['Run_MODE', 'VacuumPump_STATE'], true), 10000, 'Run mode and vacuum pump ON');
+    await interruptibleDelay(c.dwellSeconds * 1000);
+    const result = vacuumResponse(baseline, store.data.Vacuum_STATE, c.minimumVacuumChange);
+    if (!result.pass) throw new Error(`Vacuum response was ${formatNumber(result.delta)}; required at least ${c.minimumVacuumChange}.`);
+    automationLog('success', `Vacuum changed by ${formatNumber(result.delta)} (minimum ${c.minimumVacuumChange}).`);
+  } finally {
+    await send(modeCommand('Run_MODE', false));
+    if (Number.isFinite(Number(originalVacuum))) await send(setpointCommand('Vacuum_SETPOINT', originalVacuum));
+    if (Number.isFinite(Number(originalFlow))) await send(setpointCommand('Flow_SETPOINT', originalFlow));
+  }
+}
+
+async function waitForReadback(predicate, timeoutMs, description) {
+  const started = Date.now(); let consecutive = 0;
+  while (Date.now() - started < timeoutMs) {
+    assertAutomationSafe(); consecutive = predicate(store.data) ? consecutive + 1 : 0;
+    if (consecutive >= 2) return;
+    await interruptibleDelay(250);
+  }
+  throw new Error(`Timed out waiting for ${description}. Last readback was saved in the session report.`);
+}
+
+function assertAutomationSafe() {
+  if (automation.abort) throw new Error('Automation stopped; all operating modes were commanded OFF.');
+  if (store.connection !== 'CONNECTED') throw new Error('Controller disconnected; shutdown commands may not have reached the hardware. Verify locally.');
+  if (hasActiveAlarm(store.data)) throw new Error(`Firmware alarm became active (${store.data.AlarmStatus ?? store.data.ErrorCode_STATE}); sequence stopped.`);
+}
+
+async function sendRequired(command) {
+  assertAutomationSafe();
+  if (!await send(command)) throw new Error(`Could not send controller command ${command}.`);
+}
+
+async function stopAutomation(reason) {
+  if (automation.status !== 'running') return;
+  automation.abort = true; automationLog('warning', reason); await safeShutdown();
+}
+
+async function safeShutdown() {
+  for (const command of safeShutdownCommands()) await send(command);
+  automationLog('info', 'Safe baseline requested: all operating modes OFF.');
+}
+
+function interruptibleDelay(ms) {
+  return new Promise((resolve, reject) => {
+    const started = Date.now();
+    const timer = setInterval(() => {
+      if (automation.abort) { clearInterval(timer); reject(new Error('Automation stopped by operator.')); }
+      else if (Date.now() - started >= ms) { clearInterval(timer); resolve(); }
+    }, 100);
+  });
+}
+
+function automationLog(level, message) {
+  automation.log.push({ at: new Date().toISOString(), level, message });
+  if (automation.log.length > 30) automation.log.shift();
+  recordTimeline('commissioning', level, message);
+}
+
+function renderAutomation() {
+  const c = automation.config; const running = automation.status === 'running';
+  const connected = store.connection === 'CONNECTED';
+  const alarmKnown = store.data.AlarmStatus !== undefined || store.data.ErrorCode_STATE !== undefined;
+  const alarmClear = alarmKnown && !hasActiveAlarm(store.data);
+  const statusClass = automation.status === 'complete' ? 'text-bg-success' : automation.status === 'failed' ? 'text-bg-danger' : running ? 'text-bg-primary' : automation.status === 'stopped' ? 'text-bg-warning' : 'text-bg-secondary';
+  return `<div class="dash-card accent-orange mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center"><span><i class="bi bi-cpu me-1"></i>Automated electronic checks</span><span class="badge ${statusClass}">${escapeHtml(automation.status.toUpperCase())}</span></div>
+    <div class="card-body">
+      <p class="small text-muted">The runner sends one command at a time, requires two matching live readbacks, stops on any firmware alarm or disconnect, and commands every mode OFF at the beginning and end. It does not certify hoses, flow direction, leaks, or actual mechanical movement.</p>
+      <div class="row g-3"><div class="col-lg-5"><div class="fw-semibold mb-2">Select checks</div>
+        ${automationCheck('flush', 'Flush pump + valve', c.flush, running)}${automationCheck('drain', 'Drain pump + valve', c.drain, running)}${automationCheck('bypass', 'Bypass valve', c.bypass, running)}${automationCheck('vacuum', 'Run + vacuum response (optional)', c.vacuum, running)}
+        <div class="row g-2 mt-1"><div class="col-4"><label class="form-label small">Dwell (s)</label><input type="number" min="2" max="30" step="1" class="form-control form-control-sm" data-commissioning-option="dwellSeconds" value="${c.dwellSeconds}" ${running ? 'disabled' : ''}></div>
+        ${c.vacuum ? `<div class="col-4"><label class="form-label small">Vacuum (%)</label><input type="number" min="0" max="100" class="form-control form-control-sm" data-commissioning-option="vacuumSetpoint" value="${c.vacuumSetpoint}" ${running ? 'disabled' : ''}></div><div class="col-4"><label class="form-label small">Flow (%)</label><input type="number" min="0" max="100" class="form-control form-control-sm" data-commissioning-option="flowSetpoint" value="${c.flowSetpoint}" ${running ? 'disabled' : ''}></div><div class="col-6"><label class="form-label small">Min vacuum change</label><input type="number" min="0" max="500" step="0.1" class="form-control form-control-sm" data-commissioning-option="minimumVacuumChange" value="${c.minimumVacuumChange}" ${running ? 'disabled' : ''}></div>` : ''}</div>
+      </div><div class="col-lg-7"><div class="fw-semibold mb-2">Local operator safety gate</div>
+        ${automationCheck('plumbingReady', 'Plumbing is complete; hoses are secured and drains are safely routed.', c.plumbingReady, running)}${automationCheck('fluidReady', 'Correct fluid is available; selected pumps will not run dry.', c.fluidReady, running)}${automationCheck('estopReady', 'I am at the machine with the emergency stop accessible.', c.estopReady, running)}${automationCheck('permission', 'I authorize this browser to actuate the selected hardware now.', c.permission, running)}
+        <div class="small mt-2"><span class="${connected ? 'text-success' : 'text-danger'}">${connected ? '● Controller connected' : '● Controller disconnected'}</span> · <span class="${alarmClear ? 'text-success' : 'text-danger'}">${!alarmKnown ? 'waiting for alarm-status telemetry' : alarmClear ? 'alarm clear' : 'active firmware alarm'}</span></div>
+        <div class="d-flex gap-2 mt-3"><button class="btn btn-warning" data-commissioning-action="run" ${automationReady() && !running ? '' : 'disabled'}><i class="bi bi-play-fill me-1"></i>Run selected checks</button><button class="btn btn-danger" data-commissioning-action="stop" ${running ? '' : 'disabled'}><i class="bi bi-stop-fill me-1"></i>Stop and command all OFF</button></div>
+      </div></div>
+      ${automation.current ? `<div class="alert alert-primary py-2 mt-3 mb-2"><span class="spinner-border spinner-border-sm me-2"></span>${escapeHtml(automation.current)}</div>` : ''}
+      ${automation.log.length ? `<div class="commissioning-log mt-3">${automation.log.slice(-8).reverse().map(item => `<div class="small border-top py-1 text-${item.level}"><span class="text-muted me-2">${new Date(item.at).toLocaleTimeString()}</span>${escapeHtml(item.message)}</div>`).join('')}</div>` : ''}
+    </div></div>`;
+}
+
+function automationCheck(key, label, checked, disabled) {
+  return `<div class="form-check mb-2"><input class="form-check-input" type="checkbox" data-commissioning-option="${key}" id="commission-${key}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''}><label class="form-check-label small" for="commission-${key}">${escapeHtml(label)}</label></div>`;
+}
+
+function formatNumber(value) { return Number.isFinite(Number(value)) ? Number(value).toFixed(2) : 'unavailable'; }
+function inRange(value, min, max) { const numeric = Number(value); return Number.isFinite(numeric) && numeric >= min && numeric <= max; }
+
 function render(panel) {
   const root = panel.querySelector('#validation-root');
   if (!root) return;
@@ -273,7 +457,8 @@ function render(panel) {
   const progress = Math.round(((TESTS.length - summary.pending) / TESTS.length) * 100);
   root.innerHTML = `
     <div class="alert alert-warning"><strong><i class="bi bi-exclamation-triangle-fill me-1"></i>Commissioning mode:</strong>
-      the analyzer observes controller telemetry but never proves physical safety. It does not automatically actuate pumps or valves. Follow lab SOP, keep clear of moving/fluid components, and confirm physical behavior yourself.</div>
+      automated tests can actuate selected pumps and valves only after the local operator clears every safety gate. Controller readback never proves physical safety: follow lab SOP, keep the emergency stop accessible, and personally confirm fluid routing and component movement.</div>
+    ${renderAutomation()}
     <div class="row g-3">
       <div class="col-xl-8">
         <div class="dash-card accent-blue">

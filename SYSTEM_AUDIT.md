@@ -49,6 +49,10 @@ No IDS hardware was available. Physical GPIO assignments, electrical polarity, s
 - Trends and session CSV data are memory-only and limited to the most recent hour; reload/close clears them.
 - The serial device filter accepts only Arduino VID `0x2341`; a configurable/remembered device policy would be more robust.
 - The raw-command control intentionally bypasses UI validation and should remain restricted to trained users.
+- Automated commissioning is limited to documented mode commands and named readbacks. It is
+  gated by local acknowledgements, a connected controller, and a known clear alarm status;
+  it commands every mode OFF on entry, exit, abort, and failure. A readback pass is electronic
+  evidence only and cannot replace inspection for leaks, routing, motion, or safe fluid supply.
 - The HTML includes local vendor assets plus multiple CDN stylesheet fallbacks. For a controlled/offline deployment, remove redundant CDN loads or add an explicit, tested fallback strategy.
 - There is no automated firmware simulator or hardware-in-the-loop suite yet. `npm test` verifies syntax, protocol names, and important UI wiring, not physical behavior.
 

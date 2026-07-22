@@ -74,7 +74,10 @@ if (!charts.includes('pressureChart.options.scales.x.min = cutoff') || !charts.i
 for (const code of ["'HTC_ERROR'", "'HTC'", "'8192'"]) {
   if (!read('js/errors.js').includes(code)) throw new Error(`HTC firmware representation ${code} is not decoded`);
 }
-if (!validation.includes('the analyzer observes controller telemetry but never proves physical safety')) throw new Error('Missing guided lab validation safety boundary');
+if (!validation.includes('Controller readback never proves physical safety')) throw new Error('Missing guided lab validation safety boundary');
+for (const marker of ['automationReady', 'safeShutdownCommands', 'Stop and command all OFF', 'VacuumPump_STATE']) {
+  if (!validation.includes(marker)) throw new Error(`Automated commissioning runner is missing ${marker}`);
+}
 if (!validation.includes('Finish certification')) throw new Error('Lab validation certification workflow is missing');
 if (!ink.includes('defaultSampleVolumeUl: 1000')) throw new Error('Ink checker sample default is not 1 mL');
 if (!ink.includes('Calibration required:')) throw new Error('Ink checker calibration warning is missing');
@@ -86,6 +89,7 @@ for (const entry of ['index.html', 'css', 'js', 'vendor']) {
   if (!pagesBuilder.includes(`'${entry}'`)) throw new Error(`Pages builder is missing ${entry}`);
 }
 if (!indexHtml.includes('ids-build-commit') || !pagesBuilder.includes('ids-build-commit')) throw new Error('Pages build identity is not embedded');
+if (!pagesBuilder.includes('Stamp every local module edge') || !pagesBuilder.includes('remote-dashboard.js?v=')) throw new Error('Pages assets are not consistently cache-versioned');
 if (!indexHtml.includes('update-banner') || !read('js/app.js').includes('checkDeploymentInfo')) throw new Error('Web update notification flow is missing');
 if (!updatePage.includes('getRegistrations') || !updatePage.includes("startsWith('ids-gui-')")) throw new Error('Force-update cache recovery page is incomplete');
 

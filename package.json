@@ -6,7 +6,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node scripts/audit-ui.mjs",
+    "test": "node scripts/audit-ui.mjs && node --test test/*.test.mjs",
     "test:worker": "node worker/test/integration.mjs",
     "build:pages": "node scripts/build-pages.mjs",
     "copy-vendor": "node scripts/copy-vendor.js",

@@ -133,8 +133,11 @@ See `CHANGELOG.md` for full release notes.
   unexpected controller disconnects, and stale telemetry, with recovery events and
   duplicate suppression. Each alert/recovery category can be enabled independently in
   Settings; manual test notifications remain available for delivery checks.
-- Lab Validation provides a non-actuating, guided 36-check physical I/O audit with
-  live readbacks, persisted results, notes, a change timeline, and JSON/Markdown reports.
+- Commissioning provides a guided 36-check physical I/O audit plus a locally gated
+  electronic runner for Flush, Drain, Bypass, and optional Run/vacuum response checks.
+  The runner requires live alarm telemetry and explicit safety acknowledgements, verifies
+  two consecutive readbacks, aborts on alarms/disconnects, and commands all modes OFF at
+  both boundaries. Physical behavior still requires an operator confirmation.
 - The remote dashboard now includes allowlisted, read-only live system telemetry for phones.
 - Mobile control uses a separate operator token and an expiring Worker command queue. The
   desktop must be connected and locally enabled for 30 minutes; only Run, Stop, vacuum,
@@ -162,6 +165,10 @@ See `CHANGELOG.md` for full release notes.
   - Use selector when multiple devices are connected.
 - **App appears dimmed on startup**
   - Update to latest code. Ink-check modals are now tab-scoped to avoid hidden-tab backdrops.
+- **A deployed control is still missing after Force update**
+  - Current Pages builds version the entry point, every nested JavaScript module, and the
+    stylesheet with the same commit identifier. Open `update.html` once, then reload the app;
+    the build badge should change to the latest short commit.
 
 ## Screenshots
 
