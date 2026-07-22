@@ -14,6 +14,7 @@ import { initInkTab } from './ui-ink.js';
 import { initValidationTab } from './ui-validation.js';
 import { initCSVExport, exportSessionCSV } from './csv-export.js';
 import { initNotifications } from './notifications.js';
+import { initRemoteControl } from './remote-control.js';
 
 /* ---------- Boot ---------- */
 
@@ -46,6 +47,7 @@ function boot() {
   initValidationTab();
   initCSVExport();
   initNotifications();
+  initRemoteControl();
 
   // Wire up connection badge
   store.on('connection', updateConnectionBadge);

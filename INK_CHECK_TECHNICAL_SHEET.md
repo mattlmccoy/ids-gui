@@ -1,9 +1,9 @@
 # Ink Check Tool: Technical Sheet
 
 ## 1. Purpose
-The Ink Check tool logs density drift of IPA-based carbon ink and provides a provisional,
-uncalibrated concentration/add-back estimate. Production dosing must not rely on the
-relative-density estimate until a process-specific calibration curve is installed.
+The Ink Check tool logs density drift of IPA-based carbon ink and calculates concentration
+only from a process-specific empirical calibration. Concentration and IPA dosing remain
+disabled until at least two known calibration points are installed.
 
 Primary goals:
 - Log timed sample measurements (known volume + measured mass).
@@ -66,12 +66,13 @@ Default stored file paths:
 
 ## 3. Data Model
 Top-level JSON payload:
-- `version` (integer; current `2`)
+- `version` (integer; current `3`)
 - `updatedAt` (ISO-8601 UTC)
 - `state` object:
   - `entries[]`
   - `settings`
   - `reminder`
+  - `calibrationPoints[]`
 
 ### 3.1 Entry Schema
 Each sample entry contains:
@@ -97,6 +98,13 @@ Each sample entry contains:
 ### 3.3 Reminder Schema
 - `snoozeUntil`: epoch ms
 
+### 3.4 Calibration Point Schema
+
+- `densityGml`: density of independently prepared known mixture
+- `carbonWtPct`: known carbon concentration
+- `temperatureC`: measurement temperature or `null`
+- At least two points are required; density and concentration must both increase strictly.
+
 ## 4. Computation Definitions
 
 ### 4.1 Density
@@ -116,14 +124,15 @@ history.
 Baseline density:
 - `rho_base = density(baselineEntry)`
 
-### 4.3 Estimated Concentration
-For each sample:
-- Density ratio:
-  - `R = rho_sample / rho_base`
-- Nominal concentration for the segment:
-  - `C_nom = baselineEntry.nominalCarbonWtPctAtSample`
-- Estimated concentration:
-  - `C_est = clamp(C_nom * R, 0, 95)`  (wt%)
+### 4.3 Calibrated Concentration
+
+- Calibration points are sorted by density.
+- A sample must fall between two measured calibration densities.
+- Concentration is linearly interpolated between those adjacent known points.
+- Extrapolation outside the measured range is prohibited.
+- When calibration temperatures are supplied, sample temperature is required and must be
+  within 2 °C of the calibration mean.
+- If any condition fails, `C_est` is unavailable and every dosing output is disabled.
 
 ### 4.4 IPA Add-back (Bottle Basis)
 For each sample:
@@ -154,9 +163,8 @@ Given operator aliquot volume `V_aliquot` (mL), use latest active-family sample:
 - Density increase tracks concentration increase.
 - Bottle volume input is operator-provided and used directly for bottle-scale add-back.
 - IPA density is treated as constant over operating conditions.
-- The current relative-density relationship is an approximation, not a generally valid
-  concentration law. Density contains a large solvent contribution and must be mapped to
-  concentration empirically for this formulation.
+- Density contains a large solvent contribution and is mapped to concentration only through
+  known formulation-specific calibration points.
 
 ### 6.1 Provisional plausibility guard
 
@@ -171,11 +179,12 @@ Given operator aliquot volume `V_aliquot` (mL), use latest active-family sample:
   - particulate settling effects on sampled aliquot representativeness,
   - temperature correction on density,
   - uncertainty propagation / confidence intervals.
-- The UI prominently labels carbon and add-back results as uncalibrated.
+- The UI prevents carbon and add-back results when calibration is missing, out of range, or
+  temperature-incompatible.
 - Add-back is model-based guidance and should be validated with process-specific empirical calibration.
 
 ## 8. Cross-Platform / Version Notes
-- JSON is versioned (`version: 2`) and normalized on load.
+- JSON is versioned (`version: 3`) and normalized on load.
 - Loader accepts either wrapped payload (`{version, state}`) or direct state object.
 - Family-based fields are required in current behavior; defaults are applied during normalization if missing.
 

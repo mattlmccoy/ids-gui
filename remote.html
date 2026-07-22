@@ -38,6 +38,11 @@
                  autocomplete="off" placeholder="Worker VIEWER_TOKEN">
         </div>
         <div class="col-md-5">
+          <label class="form-label small mb-1" for="remote-operator-token">Operator token (required for controls)</label>
+          <input class="form-control form-control-sm font-monospace" type="password" id="remote-operator-token"
+                 autocomplete="off" placeholder="Worker OPERATOR_TOKEN">
+        </div>
+        <div class="col-md-5">
           <label class="form-label small mb-1" for="remote-viewer-name">Your name (for acknowledgements)</label>
           <input class="form-control form-control-sm" id="remote-viewer-name" maxlength="80" placeholder="Lab operator">
         </div>
@@ -46,7 +51,11 @@
           <button class="btn btn-sm btn-outline-secondary" id="remote-forget"><i class="bi bi-trash me-1"></i>Forget credentials</button>
         </div>
       </div>
-      <div class="small mt-2">The viewer token stays in this browser. It can read and acknowledge events but cannot submit device alerts.</div>
+      <div class="small mt-2">Tokens stay in this browser. The viewer token is read-only; the separate operator token can queue only the controls shown below.</div>
+    </div>
+
+    <div class="alert alert-danger py-2 small">
+      <strong>Remote-control warning:</strong> commands require the lab computer's temporary local enable latch. Network Stop is not an emergency stop. Maintain visual contact with the machine and use local safety controls for hazardous conditions.
     </div>
 
     <div class="d-flex justify-content-between align-items-center mb-2">

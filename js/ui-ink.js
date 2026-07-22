@@ -1,7 +1,7 @@
 import store from './state.js';
 
 const STORAGE_KEY = 'ids-ink-check-v1';
-const DATA_VERSION = 2;
+const DATA_VERSION = 3;
 const REMINDER_SNOOZE_HOURS = 4;
 const DEFAULT_FAMILY_ID = 'IPA 25 wt%';
 const DEFAULTS = {
@@ -34,10 +34,9 @@ export function initInkTab() {
 
 function buildHTML() {
   return `
-    <div class="alert alert-danger">
+    <div class="alert alert-danger" id="ink-calibration-banner">
       <div class="d-flex gap-2 align-items-start"><i class="bi bi-exclamation-octagon-fill"></i><div>
-        <strong>Uncalibrated model:</strong> density logging is valid, but the displayed carbon estimate and IPA add-back use an experimental relative-density approximation.
-        Do not dose production ink from this estimate alone until tomorrow's known-mixture calibration is complete.
+        <strong>Calibration required:</strong> density logging is available, but concentration and IPA dosing stay disabled until at least two known density/wt% calibration points are entered.
       </div></div>
     </div>
     <div class="alert alert-warning d-none" id="ink-reminder-banner">
@@ -136,6 +135,17 @@ function buildHTML() {
           </div>
         </div>
 
+        <div class="dash-card accent-orange mt-3">
+          <div class="card-header"><i class="bi bi-graph-up-arrow me-1"></i> Empirical Calibration</div>
+          <div class="card-body">
+            <label class="form-label small">Known points: density g/mL, carbon wt%, temperature °C</label>
+            <textarea class="form-control form-control-sm font-monospace" rows="4" id="ink-calibration-points" placeholder="0.8900,20.0,22.0&#10;0.9200,25.0,22.0&#10;0.9550,30.0,22.0"></textarea>
+            <div class="small mt-2" style="color:var(--text-muted)">Use independently prepared known mixtures. Points must increase in both density and wt%. The tool interpolates only between measured points and never extrapolates.</div>
+            <div class="d-flex gap-2 mt-2"><button class="btn-control btn-connect" id="btn-ink-apply-calibration">Apply calibration</button><button class="btn-control btn-disconnect" id="btn-ink-clear-calibration">Clear</button></div>
+            <div class="small mt-2" id="ink-calibration-status" style="color:var(--text-muted)"></div>
+          </div>
+        </div>
+
         <div class="dash-card accent-green mt-3">
           <div class="card-header"><i class="bi bi-beaker me-1"></i> In-the-Moment Mix Calculator</div>
           <div class="card-body">
@@ -194,7 +204,7 @@ function buildHTML() {
             <span class="kpi-unit">g/mL</span>
           </div>
           <div class="kpi-tile">
-            <span class="kpi-label">Relative Carbon Estimate*</span>
+            <span class="kpi-label">Calibrated Carbon</span>
             <span class="kpi-value" id="ink-est-carbon">--</span>
             <span class="kpi-unit">wt%</span>
           </div>
@@ -210,7 +220,7 @@ function buildHTML() {
           <div class="card-body">
             <div class="chart-container"><canvas id="ink-trend-chart"></canvas></div>
             <div class="small mt-2" style="color:var(--text-muted)">
-              *Experimental until calibrated. Each baseline starts a new chronological segment; a newer bottle baseline no longer rewrites older results.
+              Concentration uses piecewise interpolation between known calibration points only. Each baseline starts a new chronological segment; a newer bottle baseline never rewrites older results.
             </div>
           </div>
         </div>
@@ -295,6 +305,8 @@ function bindEvents() {
   document.getElementById('btn-ink-apply-settings')?.addEventListener('click', onApplySettings);
   document.getElementById('btn-ink-calc-aliquot')?.addEventListener('click', computeAliquotAddback);
   document.getElementById('btn-ink-calc-target')?.addEventListener('click', computeTargetDilutionAddback);
+  document.getElementById('btn-ink-apply-calibration')?.addEventListener('click', onApplyCalibration);
+  document.getElementById('btn-ink-clear-calibration')?.addEventListener('click', onClearCalibration);
   document.getElementById('ink-sample-volume-ml')?.addEventListener('input', updateDensityPreview);
   document.getElementById('ink-sample-mass-g')?.addEventListener('input', updateDensityPreview);
   document.getElementById('ink-family-filter')?.addEventListener('change', e => {
@@ -446,6 +458,26 @@ function onApplySettings() {
   setInkStatus('Model settings updated.');
 }
 
+function onApplyCalibration() {
+  const parsed = parseCalibrationText(document.getElementById('ink-calibration-points')?.value || '');
+  if (!parsed.ok) {
+    setCalibrationStatus(parsed.error, 'danger');
+    return;
+  }
+  inkState.calibrationPoints = parsed.points;
+  saveState();
+  renderAll();
+  setCalibrationStatus(`Calibration applied: ${parsed.points.length} points spanning ${fmt(parsed.points[0].densityGml, 4)}–${fmt(parsed.points.at(-1).densityGml, 4)} g/mL.`, 'success');
+}
+
+function onClearCalibration() {
+  if (!confirm('Clear the empirical ink calibration? Concentration and dosing will be disabled.')) return;
+  inkState.calibrationPoints = [];
+  saveState();
+  renderAll();
+  setCalibrationStatus('Calibration cleared.');
+}
+
 function applyDefaultsToForm() {
   document.getElementById('ink-mark-baseline').checked = true;
   updateDensityPreview();
@@ -460,7 +492,25 @@ function renderAll() {
   updateReminderUI();
   computeAliquotAddback();
   computeTargetDilutionAddback();
+  renderCalibration();
   if (persistentFilePath) setStorageStatus(`Stored file: ${persistentFilePath}`);
+}
+
+function renderCalibration() {
+  const points = inkState.calibrationPoints || [];
+  const textarea = document.getElementById('ink-calibration-points');
+  if (textarea && document.activeElement !== textarea) {
+    textarea.value = points.map(point => `${point.densityGml},${point.carbonWtPct},${point.temperatureC ?? ''}`).join('\n');
+  }
+  const calibrated = points.length >= 2;
+  const banner = document.getElementById('ink-calibration-banner');
+  if (banner) {
+    banner.className = `alert ${calibrated ? 'alert-success' : 'alert-danger'}`;
+    banner.innerHTML = calibrated
+      ? `<strong><i class="bi bi-check-circle-fill me-1"></i>Empirical calibration active:</strong> ${points.length} known points loaded. Dosing is enabled only for densities inside ${fmt(points[0].densityGml, 4)}–${fmt(points.at(-1).densityGml, 4)} g/mL and compatible sample temperature.`
+      : '<strong>Calibration required:</strong> density logging is available, but concentration and IPA dosing stay disabled until at least two known density/wt% calibration points are entered.';
+  }
+  if (calibrated) setCalibrationStatus(`${points.length} points loaded. No extrapolation outside measured density range.`, 'success');
 }
 
 function applySettingsToInputs() {
@@ -485,9 +535,10 @@ function renderSummaryAndTable() {
 
   document.getElementById('ink-baseline-density').textContent = baseline ? fmt(baseline.density, 4) : '--';
   document.getElementById('ink-latest-density').textContent = latest ? fmt(latest.density, 4) : '--';
-  document.getElementById('ink-est-carbon').textContent = latest ? fmt(latest.estimatedCarbonWtPct, 2) : '--';
-  document.getElementById('ink-ipa-add-g').textContent = latest ? `${fmt(latest.ipaAddG, 2)} g` : '--';
+  document.getElementById('ink-est-carbon').textContent = latest?.calibrated ? fmt(latest.estimatedCarbonWtPct, 2) : '--';
+  document.getElementById('ink-ipa-add-g').textContent = latest?.calibrated && latest.quality.validForDosing ? `${fmt(latest.ipaAddG, 2)} g` : '--';
   document.getElementById('ink-ipa-add-ml').textContent = latest
+    && latest.calibrated && latest.quality.validForDosing
     ? `${fmt(latest.ipaAddMl, 2)} mL IPA for ${fmt(latest.entry.bottleVolumeMl, 1)} mL ink`
     : '--';
 
@@ -504,7 +555,7 @@ function renderSummaryAndTable() {
       <td>${fmt(r.entry.sampleMassG, 4)}</td>
       <td>${fmt(r.density, 4)}</td>
       <td>${r.entry.temperatureC === null || r.entry.temperatureC === undefined ? '--' : fmt(r.entry.temperatureC, 1)}</td>
-      <td>${fmt(r.estimatedCarbonWtPct, 2)}</td>
+      <td>${r.calibrated ? fmt(r.estimatedCarbonWtPct, 2) : '--'}</td>
       <td>${fmt(r.entry.bottleVolumeMl, 1)}</td>
       <td>${fmt(r.ipaAddG, 2)}</td>
       <td>${fmt(r.ipaAddMl, 2)}</td>
@@ -530,12 +581,16 @@ function computeAliquotAddback() {
     if (resultEl) resultEl.textContent = 'Log at least one sample first.';
     return;
   }
+  if (!latest.calibrated) {
+    if (resultEl) resultEl.textContent = latest.calibrationMessage || 'No dosing recommendation: empirical calibration is required.';
+    return;
+  }
   if (!latest.quality.validForDosing) {
     if (resultEl) resultEl.textContent = `No dosing recommendation: ${latest.quality.message}`;
     return;
   }
   const settings = inkState.settings;
-  const add = computeAddbackForVolume(volumeMl, latest.density, latest.estimatedCarbonWtPct, latest.entry.nominalCarbonWtPctAtSample, settings.ipaDensityGml);
+  const add = computeAddbackForVolume(volumeMl, latest.density, latest.estimatedCarbonWtPct, latest.targetCarbonWtPct, settings.ipaDensityGml);
   if (resultEl) {
     resultEl.textContent = `For ${fmt(volumeMl, 1)} mL aliquot: add ${fmt(add.ipaAddG, 2)} g IPA (${fmt(add.ipaAddMl, 2)} mL IPA).`;
   }
@@ -558,6 +613,10 @@ function computeTargetDilutionAddback() {
   const latest = rows[rows.length - 1];
   if (!latest) {
     if (resultEl) resultEl.textContent = 'Log at least one sample first.';
+    return;
+  }
+  if (!latest.calibrated) {
+    if (resultEl) resultEl.textContent = latest.calibrationMessage || 'No dosing recommendation: empirical calibration is required.';
     return;
   }
   if (!latest.quality.validForDosing) {
@@ -586,7 +645,7 @@ function renderChart() {
   if (!canvas || typeof Chart === 'undefined') return;
   const rows = buildComputedRows(getVisibleEntries());
   const densityData = rows.map(r => ({ x: new Date(r.entry.timestamp).getTime(), y: r.density }));
-  const addBackData = rows.map(r => ({ x: new Date(r.entry.timestamp).getTime(), y: r.ipaAddG }));
+  const addBackData = rows.filter(r => r.calibrated && r.quality.validForDosing).map(r => ({ x: new Date(r.entry.timestamp).getTime(), y: r.ipaAddG }));
 
   if (!trendChart) {
     trendChart = new Chart(canvas, {
@@ -629,22 +688,68 @@ function buildComputedRows(entries) {
 
 function computeRow(entry, baselineEntry, settings) {
   const density = computeDensity(entry);
-  const baselineDensity = baselineEntry ? computeDensity(baselineEntry) : density;
-  const base = baselineDensity || density;
-  const ratio = base > 0 ? density / base : 1;
   const baselineNominal = Number(baselineEntry?.nominalCarbonWtPctAtSample);
   const nominalAtSample = baselineNominal > 0 ? baselineNominal : getActiveFamilyNominal();
-  const estimatedCarbonWtPct = Math.max(0, Math.min(95, nominalAtSample * ratio));
+  const calibration = interpolateCalibration(density, entry.temperatureC, inkState.calibrationPoints || []);
+  const estimatedCarbonWtPct = calibration.value;
   const quality = assessDensity(density, settings.ipaDensityGml);
-  const add = computeAddbackForVolume(
-    entry.bottleVolumeMl,
-    density,
-    estimatedCarbonWtPct,
-    nominalAtSample,
-    settings.ipaDensityGml
-  );
+  if (!calibration.valid) {
+    quality.validForDosing = false;
+    quality.message = calibration.message;
+  }
+  const add = calibration.valid
+    ? computeAddbackForVolume(entry.bottleVolumeMl, density, estimatedCarbonWtPct, nominalAtSample, settings.ipaDensityGml)
+    : { ipaAddG: null, ipaAddMl: null };
   const { ipaAddG, ipaAddMl } = add;
-  return { entry, baselineEntry, density, estimatedCarbonWtPct, ipaAddG, ipaAddMl, quality };
+  return { entry, baselineEntry, density, estimatedCarbonWtPct, ipaAddG, ipaAddMl, quality,
+    calibrated: calibration.valid, calibrationMessage: calibration.message, targetCarbonWtPct: nominalAtSample };
+}
+
+function interpolateCalibration(density, temperatureC, points) {
+  if (!Array.isArray(points) || points.length < 2) return { valid: false, value: null, message: 'Empirical calibration requires at least two known points.' };
+  const sorted = [...points].sort((a, b) => a.densityGml - b.densityGml);
+  if (density < sorted[0].densityGml || density > sorted.at(-1).densityGml) {
+    return { valid: false, value: null, message: `Density ${fmt(density, 4)} g/mL is outside the calibrated range; extrapolation is disabled.` };
+  }
+  const calibrationTemps = sorted.map(point => point.temperatureC).filter(Number.isFinite);
+  if (calibrationTemps.length && !Number.isFinite(temperatureC)) {
+    return { valid: false, value: null, message: 'Sample temperature is required because the calibration includes temperature.' };
+  }
+  if (Number.isFinite(temperatureC) && calibrationTemps.length) {
+    const averageTemp = calibrationTemps.reduce((sum, value) => sum + value, 0) / calibrationTemps.length;
+    if (Math.abs(temperatureC - averageTemp) > 2) {
+      return { valid: false, value: null, message: `Sample temperature ${fmt(temperatureC, 1)} °C differs by more than 2 °C from calibration (${fmt(averageTemp, 1)} °C).` };
+    }
+  }
+  for (let i = 0; i < sorted.length - 1; i += 1) {
+    const low = sorted[i]; const high = sorted[i + 1];
+    if (density < low.densityGml || density > high.densityGml) continue;
+    const fraction = (density - low.densityGml) / (high.densityGml - low.densityGml);
+    return { valid: true, value: low.carbonWtPct + fraction * (high.carbonWtPct - low.carbonWtPct), message: `Interpolated between calibration points ${i + 1} and ${i + 2}.` };
+  }
+  return { valid: false, value: null, message: 'No calibration segment contains this density.' };
+}
+
+function parseCalibrationText(text) {
+  const rows = String(text).split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  if (rows.length < 2) return { ok: false, error: 'Enter at least two calibration rows.' };
+  const points = [];
+  for (let i = 0; i < rows.length; i += 1) {
+    const [densityRaw, carbonRaw, temperatureRaw = ''] = rows[i].split(',').map(value => value.trim());
+    const densityGml = Number(densityRaw); const carbonWtPct = Number(carbonRaw);
+    const temperatureC = temperatureRaw === '' ? null : Number(temperatureRaw);
+    if (!(densityGml > 0) || !(carbonWtPct > 0 && carbonWtPct <= 95) || (temperatureC !== null && !Number.isFinite(temperatureC))) {
+      return { ok: false, error: `Invalid calibration row ${i + 1}. Use density, wt%, temperature.` };
+    }
+    points.push({ densityGml, carbonWtPct, temperatureC });
+  }
+  points.sort((a, b) => a.densityGml - b.densityGml);
+  for (let i = 1; i < points.length; i += 1) {
+    if (points[i].densityGml <= points[i - 1].densityGml || points[i].carbonWtPct <= points[i - 1].carbonWtPct) {
+      return { ok: false, error: 'Calibration density and carbon wt% must both increase strictly.' };
+    }
+  }
+  return { ok: true, points };
 }
 
 function getVisibleEntries() {
@@ -985,6 +1090,7 @@ function saveState(options = {}) {
 function createDefaultState() {
   return {
     entries: [],
+    calibrationPoints: [],
     settings: {
       activeFamily: DEFAULTS.activeFamily,
       ipaDensityGml: DEFAULTS.ipaDensityGml,
@@ -1008,6 +1114,13 @@ function normalizeState(state) {
   safe.settings.defaultSampleVolumeUl = clampNum(src.settings?.defaultSampleVolumeUl, 100, 500000, DEFAULTS.defaultSampleVolumeUl);
   safe.settings.defaultBottleVolumeMl = clampNum(src.settings?.defaultBottleVolumeMl, 1, 2000, DEFAULTS.defaultBottleVolumeMl);
   safe.reminder.snoozeUntil = Number(src.reminder?.snoozeUntil || 0);
+  if (Array.isArray(src.calibrationPoints)) {
+    safe.calibrationPoints = src.calibrationPoints.map(point => ({
+      densityGml: Number(point.densityGml), carbonWtPct: Number(point.carbonWtPct),
+      temperatureC: point.temperatureC === null || point.temperatureC === undefined ? null : Number(point.temperatureC)
+    })).filter(point => point.densityGml > 0 && point.carbonWtPct > 0 && point.carbonWtPct <= 95)
+      .sort((a, b) => a.densityGml - b.densityGml);
+  }
 
   if (Array.isArray(src.entries)) {
     safe.entries = src.entries
@@ -1042,9 +1155,17 @@ function clampNum(value, min, max, fallback) {
 }
 
 function fmt(v, digits = 3) {
+  if (v === null || v === undefined || v === '') return '--';
   const n = Number(v);
   if (!Number.isFinite(n)) return '--';
   return n.toFixed(digits);
+}
+
+function setCalibrationStatus(message, kind = '') {
+  const element = document.getElementById('ink-calibration-status');
+  if (!element) return;
+  element.textContent = message || '';
+  element.style.color = kind === 'success' ? 'var(--accent-green)' : kind === 'danger' ? 'var(--accent-red)' : 'var(--text-muted)';
 }
 
 function escapeHtml(str) {

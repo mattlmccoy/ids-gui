@@ -12,8 +12,17 @@ notifications.
 When remote alerts are enabled, the lab page also publishes an allowlisted,
 read-only telemetry snapshot every two seconds. The mobile dashboard receives
 system state, modes, primary sensors, floats, alarm status, and freshness through
-the viewer-authenticated status endpoint. Arbitrary controller fields and remote
-commands are not accepted.
+the viewer-authenticated status endpoint. Arbitrary controller fields are not accepted.
+
+## Guarded remote control
+
+The mobile page may queue only `run`, `stop`, `set_vacuum`, `set_flow`, and
+`set_temperature`. Commands require `OPERATOR_TOKEN`, expire after 15 seconds,
+and are atomically claimed before execution. The USB desktop ignores the queue
+unless a local operator enables a 30-minute control window while connected. The
+desktop validates ranges, writes one allowlisted firmware payload, records whether
+the expected serial readback appeared, and acknowledges the result. Cloud Stop is
+not a safety-rated emergency stop.
 
 Production relay: `https://ids-alert-relay.mattlmccoy.workers.dev`
 
@@ -21,6 +30,8 @@ Production relay: `https://ids-alert-relay.mattlmccoy.workers.dev`
 
 - `DEVICE_TOKEN`: write-only credential copied into each lab computer's IDS settings.
 - `VIEWER_TOKEN`: read/acknowledge credential copied into trusted remote dashboards.
+- `OPERATOR_TOKEN`: separate mobile-control credential. Never reuse `VIEWER_TOKEN`
+  or `DEVICE_TOKEN`; only trusted operators should receive it.
 - `NTFY_TOPIC`: long, randomly generated ntfy topic name.
 - `NTFY_TOKEN`: optional ntfy access token. Anonymous ntfy.sh requests from
   Cloudflare's shared egress can be rate-limited, so the UI also supports a
@@ -39,6 +50,7 @@ wrangler d1 create ids-alerts --config worker/wrangler.jsonc
 wrangler d1 migrations apply ids-alerts --remote --config worker/wrangler.jsonc
 wrangler secret put DEVICE_TOKEN --config worker/wrangler.jsonc
 wrangler secret put VIEWER_TOKEN --config worker/wrangler.jsonc
+wrangler secret put OPERATOR_TOKEN --config worker/wrangler.jsonc
 wrangler secret put NTFY_TOPIC --config worker/wrangler.jsonc
 wrangler secret put NTFY_TOKEN --config worker/wrangler.jsonc
 wrangler secret put SLACK_WEBHOOK_URL --config worker/wrangler.jsonc

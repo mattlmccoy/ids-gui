@@ -55,6 +55,14 @@ const TELEMETRY_KEYS = new Set([
   'FlushFloat_STATE', 'ServiceFloat_STATE'
 ]);
 
+const REMOTE_COMMANDS = {
+  run: { min: null, max: null },
+  stop: { min: null, max: null },
+  set_vacuum: { min: 0, max: 100 },
+  set_flow: { min: 0, max: 100 },
+  set_temperature: { min: 0, max: 70 }
+};
+
 export default {
   async fetch(request, env) {
     try {
@@ -72,7 +80,9 @@ async function route(request, env) {
   if (!originAllowed(request, env)) return json({ error: 'Origin not allowed' }, 403, request, env);
 
   if (request.method === 'GET' && url.pathname === '/health') {
-    return json({ ok: true, service: 'ids-alert-relay', time: new Date().toISOString() }, 200, request, env);
+    return json({ ok: true, service: 'ids-alert-relay', time: new Date().toISOString(), integrations: {
+      ntfy: !!env.NTFY_TOPIC, slack: !!env.SLACK_WEBHOOK_URL, remoteControl: !!env.OPERATOR_TOKEN
+    } }, 200, request, env);
   }
   if (request.method === 'POST' && url.pathname === '/api/v1/events') {
     if (!(await authorized(request, env.DEVICE_TOKEN))) return unauthorized(request, env);
@@ -81,6 +91,14 @@ async function route(request, env) {
   if (request.method === 'POST' && url.pathname === '/api/v1/telemetry') {
     if (!(await authorized(request, env.DEVICE_TOKEN))) return unauthorized(request, env);
     return updateTelemetry(request, env);
+  }
+  if (request.method === 'POST' && url.pathname === '/api/v1/commands') {
+    if (!(await authorized(request, env.OPERATOR_TOKEN))) return unauthorized(request, env);
+    return createRemoteCommand(request, env);
+  }
+  if (request.method === 'GET' && url.pathname === '/api/v1/commands') {
+    if (!(await authorized(request, env.DEVICE_TOKEN))) return unauthorized(request, env);
+    return listPendingCommands(request, env, url);
   }
   if (request.method === 'GET' && url.pathname === '/api/v1/events') {
     if (!(await authorized(request, env.VIEWER_TOKEN))) return unauthorized(request, env);
@@ -99,6 +117,16 @@ async function route(request, env) {
   if (request.method === 'POST' && deliveryMatch) {
     if (!(await authorized(request, env.DEVICE_TOKEN))) return unauthorized(request, env);
     return recordDirectDelivery(request, env, deliveryMatch[1]);
+  }
+  const commandAckMatch = url.pathname.match(/^\/api\/v1\/commands\/([A-Za-z0-9-]+)\/ack$/);
+  if (request.method === 'POST' && commandAckMatch) {
+    if (!(await authorized(request, env.DEVICE_TOKEN))) return unauthorized(request, env);
+    return acknowledgeRemoteCommand(request, env, commandAckMatch[1]);
+  }
+  const commandClaimMatch = url.pathname.match(/^\/api\/v1\/commands\/([A-Za-z0-9-]+)\/claim$/);
+  if (request.method === 'POST' && commandClaimMatch) {
+    if (!(await authorized(request, env.DEVICE_TOKEN))) return unauthorized(request, env);
+    return claimRemoteCommand(request, env, commandClaimMatch[1]);
   }
   return json({ error: 'Not found' }, 404, request, env);
 }
@@ -150,16 +178,23 @@ async function createEvent(request, env) {
       .bind(deviceId, definition.alertKey, nextActive, id, now).run();
   }
 
+  const deliveries = {
+    ntfy: stateDuplicate ? 'suppressed' : 'pending',
+    slack: !env.SLACK_WEBHOOK_URL ? 'not-configured' : stateDuplicate ? 'suppressed' : 'pending'
+  };
   if (!stateDuplicate) {
     try {
       const [ntfyResult, slackResult] = await Promise.allSettled([
         publishNtfy(env, definition, message),
         publishSlack(env, definition, message, location)
       ]);
+      deliveries.slack = !env.SLACK_WEBHOOK_URL ? 'not-configured' : slackResult.status === 'fulfilled' ? 'sent' : 'failed';
       if (slackResult.status === 'rejected') console.error('Slack delivery failed', slackResult.reason);
       if (ntfyResult.status === 'rejected') throw ntfyResult.reason;
+      deliveries.ntfy = 'sent';
       await env.DB.prepare("UPDATE events SET notification_status = 'sent' WHERE id = ?").bind(id).run();
     } catch (error) {
+      deliveries.ntfy = 'failed';
       console.error('ntfy delivery failed', error);
       await env.DB.prepare("UPDATE events SET notification_status = 'failed', notification_error = ? WHERE id = ?")
         .bind(String(error.message || error).slice(0, 500), id).run();
@@ -167,7 +202,7 @@ async function createEvent(request, env) {
   }
 
   const event = await env.DB.prepare('SELECT * FROM events WHERE id = ?').bind(id).first();
-  return json({ event, duplicate: stateDuplicate }, 201, request, env);
+  return json({ event, duplicate: stateDuplicate, deliveries }, 201, request, env);
 }
 
 async function updateTelemetry(request, env) {
@@ -199,6 +234,75 @@ async function updateTelemetry(request, env) {
       updated_at = excluded.updated_at`)
     .bind(deviceId, systemId, connection, JSON.stringify(telemetry), sourceTime, now).run();
   return json({ ok: true, deviceId, updatedAt: now }, 200, request, env);
+}
+
+async function createRemoteCommand(request, env) {
+  let body;
+  try { body = await request.json(); } catch (_) { return json({ error: 'Expected JSON body' }, 400, request, env); }
+  const deviceId = clean(body.deviceId, 80);
+  const commandType = clean(body.type, 40);
+  const definition = REMOTE_COMMANDS[commandType];
+  const idempotencyKey = clean(request.headers.get('Idempotency-Key') || body.idempotencyKey, 120);
+  if (!deviceId || !definition || !idempotencyKey) {
+    return json({ error: 'Valid deviceId, type, and Idempotency-Key are required' }, 400, request, env);
+  }
+  let value = null;
+  if (definition.min !== null) {
+    value = Number(body.value);
+    if (!Number.isFinite(value) || value < definition.min || value > definition.max) {
+      return json({ error: `${commandType} value must be ${definition.min}-${definition.max}` }, 400, request, env);
+    }
+  }
+  const duplicate = await env.DB.prepare('SELECT * FROM remote_commands WHERE idempotency_key = ?')
+    .bind(idempotencyKey).first();
+  if (duplicate) return json({ command: duplicate, duplicate: true }, 200, request, env);
+  const now = new Date();
+  const expires = new Date(now.getTime() + 15_000);
+  const id = crypto.randomUUID();
+  await env.DB.prepare(`INSERT INTO remote_commands
+    (id, idempotency_key, device_id, command_type, command_value, requested_by,
+     created_at, expires_at, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued')`)
+    .bind(id, idempotencyKey, deviceId, commandType, value,
+      clean(body.requestedBy, 80, true), now.toISOString(), expires.toISOString()).run();
+  const command = await env.DB.prepare('SELECT * FROM remote_commands WHERE id = ?').bind(id).first();
+  return json({ command }, 201, request, env);
+}
+
+async function listPendingCommands(request, env, url) {
+  const deviceId = clean(url.searchParams.get('deviceId'), 80);
+  if (!deviceId) return json({ error: 'deviceId is required' }, 400, request, env);
+  const now = new Date().toISOString();
+  await env.DB.prepare(`UPDATE remote_commands SET status = 'expired', completed_at = ?,
+    result_message = 'Command expired before the desktop accepted it'
+    WHERE device_id = ? AND status IN ('queued', 'claimed') AND expires_at <= ?`)
+    .bind(now, deviceId, now).run();
+  const result = await env.DB.prepare(`SELECT * FROM remote_commands
+    WHERE device_id = ? AND status = 'queued' AND expires_at > ?
+    ORDER BY created_at ASC LIMIT 10`).bind(deviceId, now).all();
+  return json({ commands: result.results || [], generatedAt: now }, 200, request, env);
+}
+
+async function claimRemoteCommand(request, env, id) {
+  const now = new Date().toISOString();
+  const result = await env.DB.prepare(`UPDATE remote_commands SET status = 'claimed'
+    WHERE id = ? AND status = 'queued' AND expires_at > ?`).bind(id, now).run();
+  if (!result.meta?.changes) return json({ error: 'Command is unavailable or expired' }, 409, request, env);
+  const command = await env.DB.prepare('SELECT * FROM remote_commands WHERE id = ?').bind(id).first();
+  return json({ command }, 200, request, env);
+}
+
+async function acknowledgeRemoteCommand(request, env, id) {
+  let body = {};
+  try { body = await request.json(); } catch (_) { /* use rejection defaults */ }
+  const status = body.status === 'executed' ? 'executed' : 'rejected';
+  const now = new Date().toISOString();
+  const result = await env.DB.prepare(`UPDATE remote_commands SET status = ?, completed_at = ?, result_message = ?
+    WHERE id = ? AND status = 'claimed'`)
+    .bind(status, now, clean(body.message, 300, true), id).run();
+  if (!result.meta?.changes) return json({ error: 'Queued command not found' }, 404, request, env);
+  const command = await env.DB.prepare('SELECT * FROM remote_commands WHERE id = ?').bind(id).first();
+  return json({ command }, 200, request, env);
 }
 
 async function publishSlack(env, definition, message, location) {
@@ -255,20 +359,22 @@ async function listEvents(request, env, url) {
 }
 
 async function getStatus(request, env) {
-  const [states, latest, deviceRows] = await Promise.all([
+  const [states, latest, deviceRows, commandRows] = await Promise.all([
     env.DB.prepare(`SELECT s.device_id, s.alert_key, s.active, s.updated_at, s.latest_event_id,
       e.system_id, e.event_type, e.title, e.message, e.severity, e.acknowledged_at, e.acknowledged_by
       FROM alert_states s JOIN events e ON e.id = s.latest_event_id
       ORDER BY s.device_id, s.alert_key`).all(),
     env.DB.prepare('SELECT * FROM events ORDER BY created_at DESC LIMIT 20').all(),
-    env.DB.prepare('SELECT * FROM device_status ORDER BY updated_at DESC').all()
+    env.DB.prepare('SELECT * FROM device_status ORDER BY updated_at DESC').all(),
+    env.DB.prepare('SELECT * FROM remote_commands ORDER BY created_at DESC LIMIT 20').all()
   ]);
   const devices = (deviceRows.results || []).map(row => {
     let telemetry = {};
     try { telemetry = JSON.parse(row.telemetry_json || '{}'); } catch (_) { /* retain empty telemetry */ }
     return { ...row, telemetry, telemetry_json: undefined };
   });
-  return json({ states: states.results || [], events: latest.results || [], devices, generatedAt: new Date().toISOString() }, 200, request, env);
+  return json({ states: states.results || [], events: latest.results || [], devices,
+    commands: commandRows.results || [], generatedAt: new Date().toISOString() }, 200, request, env);
 }
 
 async function acknowledgeEvent(request, env, id) {

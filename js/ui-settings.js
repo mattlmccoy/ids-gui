@@ -12,6 +12,7 @@ import {
   setRemoteAlertConfig,
   sendRemoteTestAlert
 } from './notifications.js';
+import { enableRemoteControl, disableRemoteControl, getRemoteControlState } from './remote-control.js';
 
 /* ---------- Settings Groups ---------- */
 const SETTINGS_GROUPS = [
@@ -69,6 +70,7 @@ export function initSettingsTab() {
   store.on('data', autoPopulate);
   store.on('float-config', syncWeirOverflowToggle);
   store.on('notification-config', syncNotificationToggle);
+  store.on('remote-control', syncRemoteControlStatus);
 }
 
 function buildHTML() {
@@ -226,6 +228,15 @@ function buildHTML() {
                 Credentials and the private ntfy topic stay in this browser and are not included in GitHub Pages.
               </span>
             </div>
+            <div class="alert alert-warning mt-3 mb-0">
+              <div class="fw-semibold"><i class="bi bi-shield-lock me-1"></i>Remote control safety latch</div>
+              <div class="small my-2">Remote commands are ignored unless an operator at this computer enables a temporary 30-minute window. Cloud Stop is not an emergency stop and must not replace local safety controls.</div>
+              <div class="d-flex gap-2 align-items-center flex-wrap">
+                <button class="btn btn-sm btn-warning" id="btn-enable-remote-control">Enable for 30 minutes</button>
+                <button class="btn btn-sm btn-outline-secondary" id="btn-disable-remote-control">Disable now</button>
+                <span class="badge text-bg-secondary" id="remote-control-status">Disabled</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -241,6 +252,7 @@ function bindEvents() {
   syncWeirOverflowToggle();
   syncNotificationToggle();
   syncRemoteAlertForm();
+  syncRemoteControlStatus(getRemoteControlState());
   document.getElementById('toggle-weir-ovf-invert')?.addEventListener('change', e => {
     setWeirOverflowInverted(e.target.checked);
   });
@@ -269,12 +281,26 @@ function bindEvents() {
     try {
       const result = await sendRemoteTestAlert(readRemoteAlertForm());
       const delivery = result.event?.notification_status || 'accepted';
-      setRemoteFeedback(`Test alert ${delivery}.`, delivery === 'failed' ? 'danger' : 'success');
+      const channels = result.deliveries
+        ? ` ntfy: ${result.deliveries.ntfy}; Slack: ${result.deliveries.slack}.`
+        : '';
+      setRemoteFeedback(`Test alert ${delivery}.${channels}`, delivery === 'failed' ? 'danger' : 'success');
     } catch (error) {
       setRemoteFeedback(`Test failed: ${error.message}`, 'danger');
     } finally {
       button.disabled = false;
     }
+  });
+  document.getElementById('btn-enable-remote-control')?.addEventListener('click', () => {
+    try {
+      const status = enableRemoteControl();
+      syncRemoteControlStatus(status);
+    } catch (error) {
+      setRemoteFeedback(error.message, 'danger');
+    }
+  });
+  document.getElementById('btn-disable-remote-control')?.addEventListener('click', () => {
+    syncRemoteControlStatus(disableRemoteControl('Disabled by local operator'));
   });
 
   document.querySelectorAll('.btn-send-setting').forEach(btn => {
@@ -373,6 +399,13 @@ function setRemoteFeedback(message, kind = '') {
   if (!element) return;
   element.textContent = message;
   element.style.color = kind === 'success' ? 'var(--accent-green)' : kind === 'danger' ? 'var(--accent-red)' : 'var(--text-muted)';
+}
+
+function syncRemoteControlStatus(status = getRemoteControlState()) {
+  const element = document.getElementById('remote-control-status');
+  if (!element) return;
+  element.textContent = status.active ? `Enabled until ${new Date(status.enabledUntil).toLocaleTimeString()}` : 'Disabled';
+  element.className = `badge ${status.active ? 'text-bg-warning' : 'text-bg-secondary'}`;
 }
 
 function autoPopulate(data) {

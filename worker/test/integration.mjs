@@ -48,7 +48,8 @@ await new Promise((resolve, reject) => {
 
 const worker = spawn('wrangler', [
   'dev', '--config', 'worker/wrangler.jsonc', '--port', '8787',
-  '--var', 'SLACK_WEBHOOK_URL:http://127.0.0.1:8791'
+  '--var', 'SLACK_WEBHOOK_URL:http://127.0.0.1:8791',
+  '--var', 'OPERATOR_TOKEN:local-operator-token'
 ], {
   cwd: repoRoot,
   stdio: ['ignore', 'pipe', 'pipe']
@@ -65,6 +66,21 @@ try {
 
   response = await postTelemetry();
   assert.equal(response.status, 200);
+
+  response = await postCommand('set_vacuum', 42, 'wrong');
+  assert.equal(response.status, 401);
+  response = await postCommand('set_vacuum', 42);
+  assert.equal(response.status, 201);
+  let commandResult = await response.json();
+  const commandId = commandResult.command.id;
+  response = await api(`/api/v1/commands?deviceId=${encodeURIComponent(runId)}`, 'local-device-token');
+  assert.equal((await response.json()).commands.length, 1);
+  response = await api(`/api/v1/commands/${commandId}/claim`, 'local-device-token', { method: 'POST', body: '{}' });
+  assert.equal((await response.json()).command.status, 'claimed');
+  response = await api(`/api/v1/commands/${commandId}/ack`, 'local-device-token', {
+    method: 'POST', body: JSON.stringify({ status: 'executed', message: 'readback confirmed' })
+  });
+  assert.equal((await response.json()).command.status, 'executed');
 
   response = await postEvent('weir_ovf_active', `${runId}-active-unauthorized`, 'wrong');
   assert.equal(response.status, 401);
@@ -161,6 +177,14 @@ function postTelemetry(token = 'local-device-token') {
       sourceTime: new Date().toISOString(),
       telemetry: { SystemID: 'IDS TEST', Vacuum_STATE: 18.4, Run_MODE: 1, ignored_private_field: 'drop me' }
     })
+  });
+}
+
+function postCommand(type, value, token = 'local-operator-token') {
+  return api('/api/v1/commands', token, {
+    method: 'POST',
+    headers: { 'Idempotency-Key': `${runId}-command-${type}-${token}` },
+    body: JSON.stringify({ type, value, deviceId: runId, requestedBy: 'Integration test' })
   });
 }
 

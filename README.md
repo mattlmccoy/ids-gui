@@ -134,10 +134,17 @@ See `CHANGELOG.md` for full release notes.
 - Lab Validation provides a non-actuating, guided 36-check physical I/O audit with
   live readbacks, persisted results, notes, a change timeline, and JSON/Markdown reports.
 - The remote dashboard now includes allowlisted, read-only live system telemetry for phones.
+- Mobile control uses a separate operator token and an expiring Worker command queue. The
+  desktop must be connected and locally enabled for 30 minutes; only Run, Stop, vacuum,
+  flow, and fluid-temperature setpoints are accepted, and serial readback is audited.
 - Ink Check now defaults to a 1 mL sample, captures temperature, previews density,
   rejects suspect measurements for dosing, sorts imports chronologically, and segments
-  historical calculations at each new baseline. Its concentration model remains visibly
-  marked uncalibrated until lab calibration data are collected.
+  historical calculations at each new baseline. The invalid density-ratio model has been
+  removed: concentration now requires monotonic known calibration points, uses interpolation
+  only, never extrapolates, and enforces calibration-temperature compatibility.
+- Lab Validation is a one-time/reservice commissioning workflow. It presents one queued test
+  at a time, automatically analyzes identity, telemetry, binary readbacks, sensors, alarm and
+  disconnect lifecycles, and requires explicit human confirmation for physical behavior.
 
 ## Troubleshooting
 
