@@ -5,7 +5,7 @@ import { connect as serialConnect, disconnect as serialDisconnect, send } from '
 import { flashSentButton } from './utils.js';
 import { decodeAlarmStatus, isActiveError } from './errors.js';
 import { CONFIRMATIONS, confirm } from './ui-dialogs.js';
-import { getHeaterVisibility, setHeaterVisibility, isHeaterVisible, shouldSuppressHeaterError } from './heater-visibility.js';
+import { getHeaterVisibility, setHeaterVisibility, isHeaterVisible, shouldSuppressHeaterError, describeHeaterFault } from './heater-visibility.js';
 import { loadNominalConfig } from './nominal-config.js';
 import { FLOATS, getFloatDisplayState, formatFloatState } from './float-state.js';
 
@@ -653,7 +653,11 @@ function updateErrorCard(raw) {
     kpiError.textContent = error.code;
     kpiError.style.color = 'var(--accent-red)';
     if (kpiErrorTitle) kpiErrorTitle.textContent = `${error.code} \u2014 ${error.title}`;
-    if (kpiErrorDetail) kpiErrorDetail.textContent = error.action || error.detail || '';
+    if (kpiErrorDetail) {
+      const evidence = String(error.code).includes('HTC') || String(error.code).includes('HEATER_TC')
+        ? ` ${describeHeaterFault(dataForErrorDisplay())}` : '';
+      kpiErrorDetail.textContent = `${error.action || error.detail || ''}${evidence}`;
+    }
     if (kpiErrorTitle) kpiErrorTitle.style.color = 'var(--accent-red)';
     if (kpiErrorCard) {
       kpiErrorCard.classList.remove('severity-info', 'severity-warning', 'severity-critical', 'severity-ok');
@@ -671,6 +675,10 @@ function updateErrorCard(raw) {
     }
     if (dismissBtn) dismissBtn.disabled = true;
   }
+}
+
+function dataForErrorDisplay() {
+  return store.data || {};
 }
 
 function updateConnectionUI(state) {

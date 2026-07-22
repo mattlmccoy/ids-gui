@@ -21,6 +21,10 @@ const TELEMETRY_KEYS = [
   'Run_MODE', 'Purge_MODE', 'Flush_MODE', 'Drain_MODE', 'Bypass_MODE',
   'Vacuum_STATE', 'Pressure_STATE', 'FluidTemperature_STATE',
   'MainHeaterTemperature_STATE', 'AUXHeaterTemperature_STATE',
+  'InputPump_STATE', 'RecirculationPump_STATE', 'DrainPump_STATE',
+  'BulkSupplyPump_STATE', 'VacuumPump_STATE', 'flushPump_STATE',
+  'ManifoldValve1_STATE', 'ManifoldValve2_STATE', 'DrainValve_STATE',
+  'BulkSupplyValve_STATE', 'BypassValve_STATE', 'flushValve_STATE',
   'SupplyFloat_STATE', 'WeirFloat_STATE', 'WasteFloat_STATE',
   'SupplyOverflowFloat_STATE', 'WeirOverflowFloat_STATE', 'FlushFloat_STATE', 'ServiceFloat_STATE'
 ];
@@ -32,6 +36,7 @@ const FLOAT_TELEMETRY_KEYS = new Set([
 
 let previousWeirState = null;
 let previousSupplyOverflowState = null;
+let previousFirmwareAlarmCode = null;
 let lastDataAt = 0;
 let staleTimer = null;
 let lastDisconnectReason = 'unknown';
@@ -162,10 +167,19 @@ function onAlarm({ raw } = {}) {
   const activeMessage = active
     ? `Firmware reported ${decoded.error.code}: ${decoded.error.title}. ${decoded.error.action}`
     : null;
+  // A different active firmware error is a new incident even if the previous
+  // error never passed through NO_ERROR. Do not let the boolean alarm state
+  // suppress a meaningful code change (for example HEATER_ERROR -> HTC_ERROR).
+  if (active && previousFirmwareAlarmCode && previousFirmwareAlarmCode !== decoded.error.code) {
+    const condition = conditions.get('firmware_alarm');
+    if (condition?.timer) clearTimeout(condition.timer);
+    if (condition) { condition.observed = false; condition.timer = null; }
+  }
   transitionCondition(
     'firmware_alarm', active, 'firmware_alarm_active', 'firmware_alarm_recovered',
     activeMessage, 'The IDS firmware alarm returned to NO_ERROR.'
   );
+  previousFirmwareAlarmCode = active ? decoded.error.code : null;
 }
 
 function onConnection(state) {
@@ -333,6 +347,7 @@ async function postRemoteEvent(type, message, config = getRemoteAlertConfig()) {
       result.event.notification_status = 'sent-direct';
     }
     result.directFallback = true;
+    result.deliveries = { ...(result.deliveries || {}), ntfy: 'sent-direct' };
   }
   return result;
 }

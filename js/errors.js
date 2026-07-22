@@ -23,6 +23,24 @@ const ERROR_TABLE = {
     action: 'Inspect thermocouple connections on heater assembly.',
     severity: 'critical'
   },
+  'HTC_ERROR': {
+    title: 'Heater Thermocouple Error',
+    detail: 'The firmware shorthand HTC indicates an invalid heater thermocouple signal. This is normally an open, disconnected, reversed, or out-of-range heater temperature input—not a fluid thermocouple fault.',
+    action: 'Stop heating. Compare the Main and Aux heater temperature readbacks, then inspect the thermocouple and connector for the channel with a missing or implausible value.',
+    severity: 'critical'
+  },
+  'HTC': {
+    title: 'Heater Thermocouple Error',
+    detail: 'HTC is the firmware shorthand for an invalid heater thermocouple signal. A 999 °C reading is the controller fault sentinel, not a real temperature.',
+    action: 'Keep heating stopped. Inspect the thermocouple, plug, polarity, and wiring for the heater channel reading 999 °C or otherwise implausible.',
+    severity: 'critical'
+  },
+  '8192': {
+    title: 'Heater Thermocouple Error',
+    detail: 'Error bit 8192 corresponds to the heater thermocouple fault reported as HTC by this firmware.',
+    action: 'Keep heating stopped. Inspect the thermocouple, plug, polarity, and wiring for the heater channel reading 999 °C or otherwise implausible.',
+    severity: 'critical'
+  },
   'FLUID_TC_ERROR': {
     title: 'Fluid Thermocouple Error',
     detail: 'Fluid thermocouple is disconnected or reading out of range.',

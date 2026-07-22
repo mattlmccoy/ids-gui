@@ -50,6 +50,10 @@ const TELEMETRY_KEYS = new Set([
   'Run_MODE', 'Purge_MODE', 'Flush_MODE', 'Drain_MODE', 'Bypass_MODE',
   'Vacuum_STATE', 'Pressure_STATE', 'FluidTemperature_STATE',
   'MainHeaterTemperature_STATE', 'AUXHeaterTemperature_STATE',
+  'InputPump_STATE', 'RecirculationPump_STATE', 'DrainPump_STATE',
+  'BulkSupplyPump_STATE', 'VacuumPump_STATE', 'flushPump_STATE',
+  'ManifoldValve1_STATE', 'ManifoldValve2_STATE', 'DrainValve_STATE',
+  'BulkSupplyValve_STATE', 'BypassValve_STATE', 'flushValve_STATE',
   'SupplyFloat_STATE', 'WeirFloat_STATE', 'WasteFloat_STATE',
   'SupplyOverflowFloat_STATE', 'WeirOverflowFloat_STATE',
   'FlushFloat_STATE', 'ServiceFloat_STATE'
@@ -150,16 +154,21 @@ async function createEvent(request, env) {
     .bind(idempotencyKey).first();
   if (duplicate) return json({ event: duplicate, duplicate: true }, 200, request, env);
 
-  const priorState = definition.phase === 'test' ? null : await env.DB.prepare(
-    'SELECT active FROM alert_states WHERE device_id = ? AND alert_key = ?'
-  ).bind(deviceId, definition.alertKey).first();
-  const nextActive = definition.phase === 'active' ? 1 : 0;
-  const stateDuplicate = definition.phase !== 'test' && priorState && Number(priorState.active) === nextActive;
-
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
   const location = systemId || deviceId;
   const message = suppliedMessage || defaultMessage(body.type, location);
+  const priorState = definition.phase === 'test' ? null : await env.DB.prepare(
+    `SELECT s.active, e.message FROM alert_states s
+     JOIN events e ON e.id = s.latest_event_id
+     WHERE s.device_id = ? AND s.alert_key = ?`
+  ).bind(deviceId, definition.alertKey).first();
+  const nextActive = definition.phase === 'active' ? 1 : 0;
+  const samePhase = definition.phase !== 'test' && priorState && Number(priorState.active) === nextActive;
+  // Recoveries with the same state are duplicates. Active alarms are duplicates
+  // only when their diagnostic message also matches, so a new firmware error
+  // code is never swallowed behind an already-active alarm state.
+  const stateDuplicate = !!samePhase && (definition.phase !== 'active' || priorState.message === message);
   const notificationStatus = stateDuplicate ? 'suppressed' : 'pending';
 
   await env.DB.prepare(`INSERT INTO events
@@ -348,7 +357,13 @@ async function publishNtfy(env, definition, message) {
   const response = await fetch(`${base}/${encodeURIComponent(env.NTFY_TOPIC)}`, {
     method: 'POST', headers, body: message
   });
-  if (!response.ok) throw new Error(`ntfy returned HTTP ${response.status}`);
+  if (!response.ok) {
+    const retryAfter = response.headers.get('Retry-After');
+    const rateHint = response.status === 429
+      ? ` (rate limited${retryAfter ? `; retry after ${retryAfter}` : ''}; configure NTFY_TOKEN for authenticated delivery)`
+      : '';
+    throw new Error(`ntfy returned HTTP ${response.status}${rateHint}`);
+  }
 }
 
 async function listEvents(request, env, url) {

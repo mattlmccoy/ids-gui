@@ -110,6 +110,7 @@ function renderDevices(devices, generatedAt, commands) {
             ${metric('Fluid temp', withUnit(data.FluidTemperature_STATE, '°C'))}
           </div>
           <div class="d-flex flex-wrap gap-2 mb-2">${floatBadges(data)}</div>
+          <div class="d-flex flex-wrap gap-2 mb-2">${outputBadges(data)}</div>
           <div class="small text-muted">Firmware ${escapeHtml(data.SoftwareRev ?? '—')} · Last update ${formatAge(ageSeconds)} · ${formatTime(device.updated_at)}</div>
           <div class="small mt-1 ${alarmActive(data) ? 'text-danger fw-semibold' : 'text-success'}">Alarm: ${escapeHtml(data.AlarmStatus ?? data.ErrorCode_STATE ?? '—')}</div>
           <div class="border-top mt-3 pt-3 remote-controls" data-device-id="${escapeHtml(device.device_id)}">
@@ -228,6 +229,21 @@ function floatBadges(data) {
   return floats.filter(([key]) => data[key] !== undefined).map(([key, label]) => {
     const on = Number(data[key]) === 1;
     return `<span class="badge ${on ? 'text-bg-primary' : 'text-bg-secondary'}">${escapeHtml(label)}: ${on ? 'ON' : 'OFF'}</span>`;
+  }).join('');
+}
+
+function outputBadges(data) {
+  const outputs = [
+    ['InputPump_STATE', 'Input Pump'], ['RecirculationPump_STATE', 'Recirc Pump'],
+    ['DrainPump_STATE', 'Drain Pump'], ['BulkSupplyPump_STATE', 'Bulk Pump'],
+    ['VacuumPump_STATE', 'Vacuum Pump'], ['flushPump_STATE', 'Flush Pump'],
+    ['ManifoldValve1_STATE', 'Manifold V1'], ['ManifoldValve2_STATE', 'Manifold V2'],
+    ['DrainValve_STATE', 'Drain Valve'], ['BulkSupplyValve_STATE', 'Bulk Valve'],
+    ['BypassValve_STATE', 'Bypass Valve'], ['flushValve_STATE', 'Flush Valve']
+  ];
+  return outputs.filter(([key]) => data[key] !== undefined).map(([key, label]) => {
+    const on = Number(data[key]) === 1;
+    return `<span class="badge ${on ? 'text-bg-success' : 'text-bg-dark border'}">${escapeHtml(label)}: ${on ? 'ON' : 'OFF'}</span>`;
   }).join('');
 }
 

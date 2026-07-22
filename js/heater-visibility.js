@@ -82,6 +82,22 @@ export function shouldSuppressHeaterError(errorCode, rawAlarm = '') {
   return mainHidden && auxHidden;
 }
 
+/** Give the operator the live evidence behind a generic heater/HTC alarm. */
+export function describeHeaterFault(data = store.data) {
+  const readings = [
+    ['Main', data?.MainHeaterTemperature_STATE],
+    ['Aux', data?.AUXHeaterTemperature_STATE]
+  ];
+  const formatted = readings.map(([label, raw]) => {
+    const value = Number(raw);
+    if (raw === undefined || raw === null || raw === '') return `${label}: no reading`;
+    if (!Number.isFinite(value)) return `${label}: invalid (${String(raw)})`;
+    const flag = isHeaterTempClearlyFaulted(value) ? ' — implausible' : '';
+    return `${label}: ${value.toFixed(1)} °C${flag}`;
+  });
+  return `Live heater inputs: ${formatted.join('; ')}.`;
+}
+
 function isHeaterTempClearlyFaulted(temp) {
   if (!Number.isFinite(temp)) return false;
   // 999C-like values and obviously impossible ranges from broken sensors.

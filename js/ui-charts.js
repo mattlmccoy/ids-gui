@@ -7,7 +7,7 @@ import { FLOATS, getFloatDisplayState, formatFloatState } from './float-state.js
 import { initTrendHistory, persistTrendPoint, clearTrendHistory } from './trend-history.js';
 
 const MAX_POINTS = 18_000; // one hour at the fastest supported 200 ms poll rate
-const FLOAT_TRACKS_KEY = 'ids-show-float-tracks';
+const STATE_TRACKS_KEY = 'ids-visible-state-tracks-v1';
 const TIME_WINDOWS = [
   { label: '1m',  ms: 60_000 },
   { label: '5m',  ms: 300_000 },
@@ -29,14 +29,35 @@ const PRESSURE_TRACES = [
   { key: 'Pressure_STATE',  label: 'Pressure (psi)',           color: '#f87171', yAxisID: 'yPressure' },
 ];
 
+const PUMP_TRACES = [
+  ['InputPump_STATE', 'Input Pump'], ['RecirculationPump_STATE', 'Recirc Pump'],
+  ['DrainPump_STATE', 'Drain Pump'], ['BulkSupplyPump_STATE', 'Bulk Supply Pump'],
+  ['VacuumPump_STATE', 'Vacuum Pump'], ['flushPump_STATE', 'Flush Pump'],
+  ['ServiceRecirculationPump_STATE', 'Service Recirc Pump']
+];
+const VALVE_TRACES = [
+  ['ManifoldValve1_STATE', 'Manifold Valve 1'], ['ManifoldValve2_STATE', 'Manifold Valve 2'],
+  ['DrainValve_STATE', 'Drain Valve'], ['BulkSupplyValve_STATE', 'Bulk Supply Valve'],
+  ['BypassValve_STATE', 'Bypass Valve'], ['flushValve_STATE', 'Flush Valve'],
+  ['ServiceInputValve_STATE', 'Service Input Valve'],
+  ['serviceRecirculationValve_STATE', 'Service Recirc Valve']
+];
+const STATE_COLORS = ['#4c8dff', '#34d399', '#f87171', '#fb923c', '#a78bfa', '#22d3ee', '#fbbf24', '#f472b6', '#60a5fa', '#2dd4bf', '#f97316', '#c084fc', '#84cc16', '#e879f9', '#38bdf8', '#facc15', '#fb7185', '#10b981', '#818cf8', '#eab308', '#06b6d4', '#a3e635'];
+const STATE_TRACES = [
+  ...FLOATS.map(f => ({ ...f, group: 'Floats', display: raw => getFloatDisplayState(f.key, raw) })),
+  ...PUMP_TRACES.map(([key, label]) => ({ key, label, group: 'Pumps', display: normalizeBinary })),
+  ...VALVE_TRACES.map(([key, label]) => ({ key, label, group: 'Valves', display: normalizeBinary }))
+].map((trace, index) => ({ ...trace, color: trace.color || STATE_COLORS[index % STATE_COLORS.length] }));
+const DEFAULT_STATE_KEYS = new Set(['WeirFloat_STATE', 'WeirOverflowFloat_STATE', 'VacuumPump_STATE', 'ManifoldValve1_STATE']);
+
 let dataBuffer = [];
 let tempChart = null;
 let pressureChart = null;
-let floatChart = null;
+let stateChart = null;
 let paused = false;
 let windowMs = TIME_WINDOWS[1].ms;
 let maxObservedPressure = 0;
-let showFloatTracks = readFloatTracksPreference();
+let visibleStateKeys = readStateTrackPreference();
 let replaySamples = [];
 let replayTimer = null;
 
@@ -66,7 +87,7 @@ export function initChartsTab() {
     requestAnimationFrame(() => {
       tempChart?.resize();
       pressureChart?.resize();
-      if (showFloatTracks) floatChart?.resize();
+      stateChart?.resize();
       refreshCharts();
     });
   });
@@ -107,12 +128,6 @@ function buildHTML() {
       <input type="number" id="poll-interval-ms" min="200" max="5000" step="50" class="form-control form-control-sm" style="width:92px">
       <button class="btn-control btn-connect" id="btn-poll-apply" style="padding:0.25rem 0.6rem;font-size:0.75rem">Apply</button>
       <button class="btn-control btn-disconnect" id="btn-poll-nominal" style="padding:0.25rem 0.6rem;font-size:0.75rem">Nominal</button>
-      <span style="width:1px;height:20px;background:var(--border-color)"></span>
-      <div class="form-check form-switch mb-0">
-        <input class="form-check-input" type="checkbox" role="switch" id="toggle-float-tracks"
-               ${showFloatTracks ? 'checked' : ''}>
-        <label class="form-check-label small" for="toggle-float-tracks">Graph float states</label>
-      </div>
       <span class="ms-auto" style="color:var(--text-muted);font-size:0.75rem" id="chart-point-count">0 points</span>
     </div>
     <div class="float-status-strip mb-3" aria-label="Current float switch status">
@@ -125,7 +140,7 @@ function buildHTML() {
       `).join('')}
     </div>
     <div class="row g-3">
-      <div class="col-lg-6">
+      <div class="col-12">
         <div class="dash-card accent-blue">
           <div class="card-header"><i class="bi bi-thermometer-half me-1"></i> Temperature</div>
           <div class="card-body">
@@ -133,7 +148,7 @@ function buildHTML() {
           </div>
         </div>
       </div>
-      <div class="col-lg-6">
+      <div class="col-12">
         <div class="dash-card accent-purple">
           <div class="card-header"><i class="bi bi-speedometer me-1"></i> Pressure / Vacuum</div>
           <div class="card-body">
@@ -144,13 +159,32 @@ function buildHTML() {
           </div>
         </div>
       </div>
-      <div class="col-12 ${showFloatTracks ? '' : 'd-none'}" id="float-track-card">
+      <div class="col-12" id="state-track-card">
         <div class="dash-card accent-cyan">
-          <div class="card-header"><i class="bi bi-toggles me-1"></i> Float State History</div>
+          <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <span><i class="bi bi-toggles me-1"></i> Machine State History</span>
+            <span class="small" style="color:var(--text-muted)">Same time axis as Pressure / Vacuum</span>
+          </div>
           <div class="card-body">
-            <div class="chart-container chart-container-floats"><canvas id="chart-floats"></canvas></div>
+            <div class="state-trace-picker mb-3">
+              ${['Floats', 'Pumps', 'Valves'].map(group => `
+                <fieldset>
+                  <legend>${group}</legend>
+                  <div class="d-flex flex-wrap gap-3 row-gap-2">
+                    ${STATE_TRACES.filter(t => t.group === group).map(t => `
+                      <label class="form-check form-check-inline mb-0">
+                        <input class="form-check-input state-track-checkbox" type="checkbox" value="${t.key}"
+                               ${visibleStateKeys.has(t.key) ? 'checked' : ''}>
+                        <span class="form-check-label small">${t.label}</span>
+                      </label>
+                    `).join('')}
+                  </div>
+                </fieldset>
+              `).join('')}
+            </div>
+            <div class="chart-container chart-container-states"><canvas id="chart-states"></canvas></div>
             <div class="small mt-2" style="color:var(--text-muted)">
-              Each lane steps between OFF / DOWN and ON / UP. Raw firmware samples remain unchanged in exported data.
+              Each selected lane steps between OFF and ON; float lanes use DOWN and UP. Raw firmware samples remain unchanged in exported data.
             </div>
           </div>
         </div>
@@ -251,20 +285,9 @@ function createCharts() {
   });
   syncPressureAxisVisibility(pressureChart);
 
-  floatChart = new Chart(document.getElementById('chart-floats'), {
+  stateChart = new Chart(document.getElementById('chart-states'), {
     type: 'line',
-    data: {
-      datasets: FLOATS.map(f => ({
-        label: f.label,
-        borderColor: f.color,
-        backgroundColor: f.color,
-        borderWidth: 2,
-        pointRadius: 0,
-        stepped: true,
-        spanGaps: true,
-        data: []
-      }))
-    },
+    data: { datasets: [] },
     options: {
       ...commonOpts,
       interaction: { mode: 'nearest', axis: 'x', intersect: false },
@@ -272,19 +295,22 @@ function createCharts() {
         x: commonOpts.scales.x,
         y: {
           min: -0.35,
-          max: FLOATS.length * 2 - 0.65,
+          max: 1.65,
           grid: { color: gridColor },
           afterBuildTicks: axis => {
-            axis.ticks = Array.from({ length: FLOATS.length * 2 }, (_, value) => ({ value }));
+            const count = Math.max(stateChart?.data?.datasets?.length || 1, 1);
+            axis.ticks = Array.from({ length: count * 2 }, (_, value) => ({ value }));
           },
           ticks: {
             color: tickColor,
             font: { size: 9 },
             callback: value => {
               const index = Math.floor(Number(value) / 2);
-              const f = FLOATS[index];
-              if (!f) return '';
-              return `${f.label} ${Number(value) % 2 ? 'ON / UP' : 'OFF / DOWN'}`;
+              const trace = stateChart?.data?.datasets?.[index]?.trace;
+              if (!trace) return '';
+              const on = Number(value) % 2 === 1;
+              const state = trace.group === 'Floats' ? (on ? 'UP' : 'DOWN') : (on ? 'ON' : 'OFF');
+              return `${trace.label} ${state}`;
             }
           }
         }
@@ -294,8 +320,10 @@ function createCharts() {
         tooltip: {
           callbacks: {
             label: item => {
-              const f = FLOATS[item.datasetIndex];
-              return `${f.label}: ${Math.round(item.parsed.y) % 2 ? 'ON / UP' : 'OFF / DOWN'}`;
+              const trace = item.dataset.trace;
+              const on = Math.round(item.parsed.y) % 2 === 1;
+              const state = trace.group === 'Floats' ? (on ? 'ON / UP' : 'OFF / DOWN') : (on ? 'ON' : 'OFF');
+              return `${trace.label}: ${state}`;
             }
           }
         }
@@ -346,15 +374,12 @@ function bindEvents() {
     const next = setPollIntervalMs(getNominalPollIntervalMs());
     if (pollInput) pollInput.value = String(next);
   });
-  document.getElementById('toggle-float-tracks')?.addEventListener('change', e => {
-    showFloatTracks = e.target.checked;
-    try { localStorage.setItem(FLOAT_TRACKS_KEY, String(showFloatTracks)); } catch (_) { /* ignore */ }
-    document.getElementById('float-track-card')?.classList.toggle('d-none', !showFloatTracks);
-    if (showFloatTracks) {
-      refreshCharts();
-      requestAnimationFrame(() => floatChart?.resize());
-    }
-  });
+  document.querySelectorAll('.state-track-checkbox').forEach(input => input.addEventListener('change', () => {
+    visibleStateKeys = new Set(Array.from(document.querySelectorAll('.state-track-checkbox:checked')).map(el => el.value));
+    persistStateTrackPreference();
+    refreshCharts();
+    requestAnimationFrame(() => stateChart?.resize());
+  }));
 }
 
 function onData(data) {
@@ -371,9 +396,9 @@ function onData(data) {
       if (!isNaN(point[t.key])) hasValue = true;
     }
   }
-  for (const f of FLOATS) {
-    if (data[f.key] === undefined) continue;
-    point[f.key] = data[f.key];
+  for (const trace of STATE_TRACES) {
+    if (data[trace.key] === undefined) continue;
+    point[trace.key] = data[trace.key];
     hasValue = true;
   }
   if (!hasValue) return;
@@ -384,7 +409,8 @@ function onData(data) {
 }
 
 function refreshCharts() {
-  const cutoff = Date.now() - windowMs;
+  const now = Date.now();
+  const cutoff = now - windowMs;
   const visible = dataBuffer.filter(p => p.timestamp >= cutoff);
   const countEl = document.getElementById('chart-point-count');
   if (countEl) countEl.textContent = `${dataBuffer.length} points`;
@@ -399,17 +425,26 @@ function refreshCharts() {
     pressureChart.data.datasets[i].hidden = !isDataKeyVisible(t.key);
     pressureChart.data.datasets[i].data = visible.filter(p => p[t.key] !== undefined).map(p => ({ x: p.timestamp, y: p[t.key] }));
   });
+  pressureChart.options.scales.x.min = cutoff;
+  pressureChart.options.scales.x.max = now;
   updatePressureAxisRange();
   syncPressureAxisVisibility(pressureChart);
   pressureChart.update('none');
 
-  if (showFloatTracks && floatChart) {
-    FLOATS.forEach((f, i) => {
-      floatChart.data.datasets[i].data = visible
-        .filter(p => p[f.key] !== undefined && getFloatDisplayState(f.key, p[f.key]) !== null)
-        .map(p => ({ x: p.timestamp, y: i * 2 + getFloatDisplayState(f.key, p[f.key]) }));
-    });
-    floatChart.update('none');
+  if (stateChart) {
+    const selected = STATE_TRACES.filter(trace => visibleStateKeys.has(trace.key));
+    stateChart.data.datasets = selected.map((trace, lane) => ({
+      label: trace.label, trace,
+      borderColor: trace.color, backgroundColor: trace.color,
+      borderWidth: 2, pointRadius: 0, stepped: true, spanGaps: true,
+      data: visible
+        .filter(point => point[trace.key] !== undefined && trace.display(point[trace.key]) !== null)
+        .map(point => ({ x: point.timestamp, y: lane * 2 + trace.display(point[trace.key]) }))
+    }));
+    stateChart.options.scales.x.min = cutoff;
+    stateChart.options.scales.x.max = now;
+    stateChart.options.scales.y.max = Math.max(selected.length * 2 - 0.65, 1.65);
+    stateChart.update('none');
   }
 }
 
@@ -452,8 +487,22 @@ function updateFloatStatus(data) {
   }
 }
 
-function readFloatTracksPreference() {
-  try { return localStorage.getItem(FLOAT_TRACKS_KEY) === 'true'; } catch (_) { return false; }
+function normalizeBinary(raw) {
+  if (raw === true || raw === 1 || raw === '1') return 1;
+  if (raw === false || raw === 0 || raw === '0') return 0;
+  return null;
+}
+
+function readStateTrackPreference() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(STATE_TRACKS_KEY) || 'null');
+    if (Array.isArray(parsed)) return new Set(parsed.filter(key => STATE_TRACES.some(trace => trace.key === key)));
+  } catch (_) { /* use defaults */ }
+  return new Set(DEFAULT_STATE_KEYS);
+}
+
+function persistStateTrackPreference() {
+  try { localStorage.setItem(STATE_TRACKS_KEY, JSON.stringify([...visibleStateKeys])); } catch (_) { /* ignore */ }
 }
 
 function saveReplayFile() {

@@ -126,7 +126,8 @@ See `CHANGELOG.md` for full release notes.
 - Web Serial support is required. The Electron build enables Serial feature flags.
 - Vendor assets (Bootstrap, Chart.js, etc.) are copied locally via `npm run copy-vendor`.
 - The latest software/protocol review is documented in `SYSTEM_AUDIT.md`.
-- Trending includes live float status plus an optional separated float-state history chart.
+- Trends uses the same explicit time bounds for pressure/vacuum and machine-state history.
+  Individual float, pump, and valve lanes can be selected and stored as a browser preference.
 - Settings includes persisted Weir OVF display inversion and opt-in local overflow notifications.
 - Remote alerts are edge-triggered and cover Weir/Supply overflow, firmware alarms,
   unexpected controller disconnects, and stale telemetry, with recovery events and
@@ -145,6 +146,10 @@ See `CHANGELOG.md` for full release notes.
 - Lab Validation is a one-time/reservice commissioning workflow. It presents one queued test
   at a time, automatically analyzes identity, telemetry, binary readbacks, sensors, alarm and
   disconnect lifecycles, and requires explicit human confirmation for physical behavior.
+- Navigation follows the normal lifecycle: Operation, Trends, Live I/O, Ink Check, Event Log,
+  Settings, then infrequent Commissioning.
+- `HTC`, `HTC_ERROR`, and error bit `8192` are decoded as a heater thermocouple input fault;
+  live Main/Aux readings identify the affected channel and explain the 999 °C fault sentinel.
 
 ## Troubleshooting
 

@@ -543,8 +543,31 @@ html, body {
 #panel-ink .form-label {
   color: var(--text-secondary);
 }
-.chart-container-floats {
-  height: 340px;
+.chart-container-states { height: 360px; }
+.state-trace-picker {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+.state-trace-picker fieldset {
+  min-width: 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+}
+.state-trace-picker legend {
+  float: none;
+  width: auto;
+  margin: 0 0 0.35rem;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+@media (max-width: 900px) {
+  .state-trace-picker { grid-template-columns: 1fr; }
+  .chart-container-states { height: 420px; }
 }
 .float-status-strip {
   display: grid;

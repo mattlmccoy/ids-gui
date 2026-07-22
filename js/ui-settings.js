@@ -284,7 +284,9 @@ function bindEvents() {
       const channels = result.deliveries
         ? ` ntfy: ${result.deliveries.ntfy}; Slack: ${result.deliveries.slack}.`
         : '';
-      setRemoteFeedback(`Test alert ${delivery}.${channels}`, delivery === 'failed' ? 'danger' : 'success');
+      const relayError = result.event?.notification_error ? ` Relay error: ${result.event.notification_error}.` : '';
+      const fallback = result.directFallback ? ' Browser fallback delivered directly to ntfy.' : '';
+      setRemoteFeedback(`Test alert ${delivery}.${channels}${relayError}${fallback}`, delivery === 'failed' ? 'danger' : 'success');
     } catch (error) {
       setRemoteFeedback(`Test failed: ${error.message}`, 'danger');
     } finally {

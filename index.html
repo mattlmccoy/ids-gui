@@ -85,31 +85,17 @@
         </button>
       </li>
       <li class="nav-item" role="presentation">
-        <button class="nav-link" id="tab-monitor" data-bs-toggle="tab"
-                data-bs-target="#panel-monitor" type="button" role="tab"
-                aria-controls="panel-monitor" aria-selected="false">
-          <i class="bi bi-display me-1"></i>Monitor
-        </button>
-      </li>
-      <li class="nav-item" role="presentation">
-        <button class="nav-link" id="tab-settings" data-bs-toggle="tab"
-                data-bs-target="#panel-settings" type="button" role="tab"
-                aria-controls="panel-settings" aria-selected="false">
-          <i class="bi bi-sliders me-1"></i>Settings
-        </button>
-      </li>
-      <li class="nav-item" role="presentation">
         <button class="nav-link" id="tab-trending" data-bs-toggle="tab"
                 data-bs-target="#panel-trending" type="button" role="tab"
                 aria-controls="panel-trending" aria-selected="false">
-          <i class="bi bi-graph-up me-1"></i>Trending
+          <i class="bi bi-graph-up me-1"></i>Trends
         </button>
       </li>
       <li class="nav-item" role="presentation">
-        <button class="nav-link" id="tab-log" data-bs-toggle="tab"
-                data-bs-target="#panel-log" type="button" role="tab"
-                aria-controls="panel-log" aria-selected="false">
-          <i class="bi bi-journal-text me-1"></i>Event Log
+        <button class="nav-link" id="tab-monitor" data-bs-toggle="tab"
+                data-bs-target="#panel-monitor" type="button" role="tab"
+                aria-controls="panel-monitor" aria-selected="false">
+          <i class="bi bi-display me-1"></i>Live I/O
         </button>
       </li>
       <li class="nav-item" role="presentation">
@@ -120,10 +106,24 @@
         </button>
       </li>
       <li class="nav-item" role="presentation">
+        <button class="nav-link" id="tab-log" data-bs-toggle="tab"
+                data-bs-target="#panel-log" type="button" role="tab"
+                aria-controls="panel-log" aria-selected="false">
+          <i class="bi bi-journal-text me-1"></i>Event Log
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="tab-settings" data-bs-toggle="tab"
+                data-bs-target="#panel-settings" type="button" role="tab"
+                aria-controls="panel-settings" aria-selected="false">
+          <i class="bi bi-sliders me-1"></i>Settings
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
         <button class="nav-link" id="tab-validation" data-bs-toggle="tab"
                 data-bs-target="#panel-validation" type="button" role="tab"
                 aria-controls="panel-validation" aria-selected="false">
-          <i class="bi bi-clipboard2-check me-1"></i>Lab Validation
+          <i class="bi bi-clipboard2-check me-1"></i>Commissioning
         </button>
       </li>
     </ul>
@@ -265,7 +265,7 @@
   <!-- App Entry Point -->
   <script type="module">
     await window.__depsReady;
-    await import('./js/app.js');
+    await import('./js/app.js?v=r19');
   </script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ids-gui-offline-v1';
+const CACHE_NAME = 'ids-gui-offline-v2';
 const APP_SHELL = [
   './', './index.html', './remote.html', './manifest.webmanifest',
   './css/styles.css', './assets/ids-icon.svg'
@@ -23,7 +23,9 @@ self.addEventListener('fetch', event => {
 
   event.respondWith((async () => {
     try {
-      const response = await fetch(request);
+      // Always revalidate application code. This prevents an installed PWA from
+      // mixing a newly deployed module with an older cached dependency.
+      const response = await fetch(request, { cache: 'no-store' });
       if (response.ok) {
         const cache = await caches.open(CACHE_NAME);
         cache.put(request, response.clone());

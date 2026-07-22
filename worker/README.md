@@ -59,6 +59,10 @@ wrangler deploy --config worker/wrangler.jsonc
 
 The D1 create command adds the generated `database_id` to the Wrangler config.
 Omit `NTFY_TOKEN` only when using an unprotected, hard-to-guess ntfy.sh topic.
+Cloudflare egress addresses are shared and anonymous publishing can receive HTTP
+429 rate limits. For unattended lab alerts, an authenticated ntfy account/token
+is strongly recommended. The browser's private-topic fallback is best-effort and
+requires the IDS page to remain open.
 Omit `SLACK_WEBHOOK_URL` when Slack delivery is not desired. Slack failures do
 not prevent ntfy delivery, and duplicate state transitions are suppressed before
 either channel is called.

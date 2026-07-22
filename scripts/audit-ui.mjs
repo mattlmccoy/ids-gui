@@ -56,8 +56,17 @@ for (const stateKey of [
 }
 
 if (!settings.includes('toggle-weir-ovf-invert')) throw new Error('Missing Weir OVF inversion control');
-if (!charts.includes('toggle-float-tracks')) throw new Error('Missing float trend control');
+if (!charts.includes('state-track-checkbox')) throw new Error('Missing selectable state trend controls');
+for (const stateKey of ['VacuumPump_STATE', 'ManifoldValve1_STATE']) {
+  if (!charts.includes(stateKey)) throw new Error(`Missing state trend trace: ${stateKey}`);
+}
 if (!charts.includes("shown.bs.tab")) throw new Error('Trending charts do not resize when shown');
+if (!charts.includes('pressureChart.options.scales.x.min = cutoff') || !charts.includes('stateChart.options.scales.x.min = cutoff')) {
+  throw new Error('Pressure and state histories do not share explicit time bounds');
+}
+for (const code of ["'HTC_ERROR'", "'HTC'", "'8192'"]) {
+  if (!read('js/errors.js').includes(code)) throw new Error(`HTC firmware representation ${code} is not decoded`);
+}
 if (!validation.includes('the analyzer observes controller telemetry but never proves physical safety')) throw new Error('Missing guided lab validation safety boundary');
 if (!validation.includes('Finish certification')) throw new Error('Lab validation certification workflow is missing');
 if (!ink.includes('defaultSampleVolumeUl: 1000')) throw new Error('Ink checker sample default is not 1 mL');

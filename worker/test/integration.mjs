@@ -132,15 +132,20 @@ try {
   assert.equal((await response.json()).event.notification_status, 'sent');
   assert.equal(ntfyMessages.length, 4);
 
-  response = await postEvent('firmware_alarm_active', `${runId}-alarm-active-1`);
+  response = await postEvent('firmware_alarm_active', `${runId}-alarm-active-1`, 'local-device-token', 'Firmware reported HEATER_ERROR');
   result = await response.json();
   assert.equal(result.event.notification_status, 'sent');
   assert.equal(ntfyMessages.length, 5);
   assert.equal(ntfyMessages[4].headers.priority, '5');
 
+  response = await postEvent('firmware_alarm_active', `${runId}-alarm-active-2`, 'local-device-token', 'Firmware reported HTC_ERROR');
+  result = await response.json();
+  assert.equal(result.event.notification_status, 'sent');
+  assert.equal(ntfyMessages.length, 6);
+
   response = await postEvent('firmware_alarm_recovered', `${runId}-alarm-recovered-1`);
   assert.equal((await response.json()).event.notification_status, 'sent');
-  assert.equal(ntfyMessages.length, 6);
+  assert.equal(ntfyMessages.length, 7);
 
   response = await api(`/api/v1/events/${result.event.id}/ack`, 'local-viewer-token', {
     method: 'POST', body: JSON.stringify({ by: 'Integration test' })
@@ -159,11 +164,11 @@ try {
   await new Promise(resolve => slack.close(resolve));
 }
 
-async function postEvent(type, idempotencyKey, token = 'local-device-token') {
+async function postEvent(type, idempotencyKey, token = 'local-device-token', message = undefined) {
   return api('/api/v1/events', token, {
     method: 'POST',
     headers: { 'Idempotency-Key': idempotencyKey },
-    body: JSON.stringify({ type, deviceId: runId, systemId: 'IDS TEST' })
+    body: JSON.stringify({ type, deviceId: runId, systemId: 'IDS TEST', message })
   });
 }
 
