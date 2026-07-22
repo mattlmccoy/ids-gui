@@ -543,6 +543,29 @@ html, body {
 #panel-ink .form-label {
   color: var(--text-secondary);
 }
+.remote-notification-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.55rem;
+}
+.remote-notification-option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-height: 72px;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: rgba(15, 17, 23, 0.24);
+  cursor: pointer;
+}
+.remote-notification-option:hover { border-color: var(--accent-blue); }
+.remote-notification-option > span:last-child {
+  padding-left: 2.6rem;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1.3;
+}
 .chart-container-states { height: 360px; }
 .state-trace-picker {
   display: grid;

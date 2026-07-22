@@ -58,6 +58,14 @@ const SETTINGS_GROUPS = [
   }
 ];
 
+const REMOTE_NOTIFICATION_OPTIONS = [
+  { key: 'weirOverflow', label: 'Weir overflow', detail: 'Activated and cleared' },
+  { key: 'supplyOverflow', label: 'Supply overflow', detail: 'Activated and cleared' },
+  { key: 'firmwareAlarm', label: 'Firmware alarms', detail: 'New code and cleared' },
+  { key: 'controllerConnection', label: 'USB connection', detail: 'Unexpected disconnect and reconnect' },
+  { key: 'staleData', label: 'Stale telemetry', detail: 'Data stopped and recovered' }
+];
+
 let populated = false;
 const nominalSettings = {};
 const settingsHistory = {};
@@ -184,6 +192,22 @@ function buildHTML() {
             <div class="small mb-3" style="color:var(--text-muted)">
               Includes Weir/Supply overflow, firmware alarms, unexpected disconnects, stale telemetry, and read-only mobile status.
               Repeated readings are suppressed; alerts are sent only after the configured debounce.
+            </div>
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <span class="small fw-semibold">Notification types</span>
+              <span class="small" style="color:var(--text-muted)">Changes apply after Save</span>
+            </div>
+            <div class="remote-notification-grid mb-3">
+              ${REMOTE_NOTIFICATION_OPTIONS.map(option => `
+                <label class="remote-notification-option" for="remote-notify-${option.key}">
+                  <span class="form-check form-switch mb-0">
+                    <input class="form-check-input remote-notification-toggle" type="checkbox" role="switch"
+                           id="remote-notify-${option.key}" data-notification-key="${option.key}">
+                    <span class="form-check-label fw-semibold">${option.label}</span>
+                  </span>
+                  <span>${option.detail}</span>
+                </label>
+              `).join('')}
             </div>
             <div class="row g-2">
               <div class="col-lg-7">
@@ -367,6 +391,10 @@ function syncRemoteAlertForm() {
     if (element.type === 'checkbox') element.checked = !!value;
     else element.value = value;
   }
+  for (const option of REMOTE_NOTIFICATION_OPTIONS) {
+    const toggle = document.getElementById(`remote-notify-${option.key}`);
+    if (toggle) toggle.checked = config.notifications?.[option.key] !== false;
+  }
   updateRemoteStatus(config);
 }
 
@@ -378,7 +406,11 @@ function readRemoteAlertForm() {
     ntfyTopic: document.getElementById('remote-ntfy-topic')?.value,
     deviceId: document.getElementById('remote-device-id')?.value,
     debounceSeconds: document.getElementById('remote-debounce')?.value,
-    staleAfterSeconds: document.getElementById('remote-stale-after')?.value
+    staleAfterSeconds: document.getElementById('remote-stale-after')?.value,
+    notifications: Object.fromEntries(REMOTE_NOTIFICATION_OPTIONS.map(option => [
+      option.key,
+      document.getElementById(`remote-notify-${option.key}`)?.checked !== false
+    ]))
   };
 }
 
@@ -392,7 +424,8 @@ function updateRemoteStatus(config) {
   const status = document.getElementById('remote-alert-status');
   if (!status) return;
   const configured = !!(config.workerUrl && config.deviceToken && config.deviceId);
-  status.textContent = config.enabled && configured ? 'Enabled' : configured ? 'Configured' : 'Not configured';
+  const selected = Object.values(config.notifications || {}).filter(Boolean).length;
+  status.textContent = config.enabled && configured ? `Enabled · ${selected}/${REMOTE_NOTIFICATION_OPTIONS.length}` : configured ? 'Configured' : 'Not configured';
   status.className = `badge ${config.enabled && configured ? 'text-bg-success' : configured ? 'text-bg-warning' : 'text-bg-secondary'}`;
 }
 

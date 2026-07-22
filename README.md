@@ -131,7 +131,8 @@ See `CHANGELOG.md` for full release notes.
 - Settings includes persisted Weir OVF display inversion and opt-in local overflow notifications.
 - Remote alerts are edge-triggered and cover Weir/Supply overflow, firmware alarms,
   unexpected controller disconnects, and stale telemetry, with recovery events and
-  duplicate suppression.
+  duplicate suppression. Each alert/recovery category can be enabled independently in
+  Settings; manual test notifications remain available for delivery checks.
 - Lab Validation provides a non-actuating, guided 36-check physical I/O audit with
   live readbacks, persisted results, notes, a change timeline, and JSON/Markdown reports.
 - The remote dashboard now includes allowlisted, read-only live system telemetry for phones.

@@ -7,6 +7,13 @@ import { shouldSuppressHeaterError } from './heater-visibility.js';
 
 const LOCAL_ENABLED_KEY = 'ids-weir-ovf-notifications';
 const REMOTE_CONFIG_KEY = 'ids-remote-alert-config-v1';
+const DEFAULT_NOTIFICATION_SELECTIONS = {
+  weirOverflow: true,
+  supplyOverflow: true,
+  firmwareAlarm: true,
+  controllerConnection: true,
+  staleData: true
+};
 const DEFAULT_CONFIG = {
   enabled: false,
   workerUrl: 'https://ids-alert-relay.mattlmccoy.workers.dev',
@@ -14,7 +21,15 @@ const DEFAULT_CONFIG = {
   ntfyTopic: '',
   deviceId: '',
   debounceSeconds: 3,
-  staleAfterSeconds: 15
+  staleAfterSeconds: 15,
+  notifications: DEFAULT_NOTIFICATION_SELECTIONS
+};
+const EVENT_SELECTION_KEY = {
+  weir_ovf_active: 'weirOverflow', weir_ovf_recovered: 'weirOverflow',
+  supply_ovf_active: 'supplyOverflow', supply_ovf_recovered: 'supplyOverflow',
+  firmware_alarm_active: 'firmwareAlarm', firmware_alarm_recovered: 'firmwareAlarm',
+  controller_disconnected: 'controllerConnection', controller_reconnected: 'controllerConnection',
+  data_stale: 'staleData', data_recovered: 'staleData'
 };
 const TELEMETRY_KEYS = [
   'SystemID', 'SoftwareRev', 'AlarmStatus', 'ErrorCode_STATE',
@@ -66,6 +81,7 @@ export function getRemoteAlertConfig() {
   let stored = {};
   try { stored = JSON.parse(localStorage.getItem(REMOTE_CONFIG_KEY) || '{}'); } catch (_) { /* ignore */ }
   const config = { ...DEFAULT_CONFIG, ...stored };
+  config.notifications = normalizeNotificationSelections(stored.notifications);
   if (!config.deviceId) {
     config.deviceId = `ids-${randomId().slice(0, 12)}`;
     persistRemoteConfig(config);
@@ -87,7 +103,8 @@ export function setRemoteAlertConfig(next) {
     ntfyTopic: String(next.ntfyTopic || '').trim().slice(0, 64),
     deviceId: String(next.deviceId || current.deviceId).trim().slice(0, 80),
     debounceSeconds: clampNumber(next.debounceSeconds, 0, 30, 3),
-    staleAfterSeconds: clampNumber(next.staleAfterSeconds, 5, 300, 15)
+    staleAfterSeconds: clampNumber(next.staleAfterSeconds, 5, 300, 15),
+    notifications: normalizeNotificationSelections(next.notifications ?? current.notifications)
   };
   persistRemoteConfig(config);
   store.emit('notification-config', { weirOverflow: areWeirOverflowNotificationsEnabled(), remote: config });
@@ -283,12 +300,18 @@ function transitionCondition(key, active, activeType, recoveredType, activeMessa
   if (!value && !existing.sentActive) return;
   const config = getRemoteAlertConfig();
   if (!config.enabled) return;
+  if (!isRemoteEventSelected(value ? activeType : recoveredType, config)) {
+    if (!value) existing.sentActive = false;
+    return;
+  }
   const delay = config.debounceSeconds * 1000;
   existing.timer = setTimeout(async () => {
     existing.timer = null;
     if (existing.observed !== value) return;
+    const currentConfig = getRemoteAlertConfig();
+    if (!currentConfig.enabled || !isRemoteEventSelected(value ? activeType : recoveredType, currentConfig)) return;
     try {
-      await postRemoteEvent(value ? activeType : recoveredType, value ? activeMessage : recoveredMessage, config);
+      await postRemoteEvent(value ? activeType : recoveredType, value ? activeMessage : recoveredMessage, currentConfig);
       existing.sentActive = value;
       store.log(value ? 'warning' : 'info', `Remote alert sent: ${value ? activeType : recoveredType}`);
     } catch (error) {
@@ -415,4 +438,16 @@ function randomId() {
 function clampNumber(value, min, max, fallback) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.min(Math.max(parsed, min), max) : fallback;
+}
+
+function normalizeNotificationSelections(value) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  return Object.fromEntries(Object.entries(DEFAULT_NOTIFICATION_SELECTIONS)
+    .map(([key, defaultValue]) => [key, source[key] === undefined ? defaultValue : !!source[key]]));
+}
+
+function isRemoteEventSelected(type, config) {
+  if (type === 'test') return true;
+  const key = EVENT_SELECTION_KEY[type];
+  return key ? config.notifications[key] !== false : true;
 }

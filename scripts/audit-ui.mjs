@@ -58,6 +58,11 @@ for (const stateKey of [
 }
 
 if (!settings.includes('toggle-weir-ovf-invert')) throw new Error('Missing Weir OVF inversion control');
+for (const key of ['weirOverflow', 'supplyOverflow', 'firmwareAlarm', 'controllerConnection', 'staleData']) {
+  if (!settings.includes(key) || !read('js/notifications.js').includes(key)) {
+    throw new Error(`Missing remote notification selection: ${key}`);
+  }
+}
 if (!charts.includes('state-track-checkbox')) throw new Error('Missing selectable state trend controls');
 for (const stateKey of ['VacuumPump_STATE', 'ManifoldValve1_STATE']) {
   if (!charts.includes(stateKey)) throw new Error(`Missing state trend trace: ${stateKey}`);
