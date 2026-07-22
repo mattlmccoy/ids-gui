@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  binaryMatches, hasActiveAlarm, modeCommand, numericMatches,
-  safeShutdownCommands, selectedCircuitTests, setpointCommand, vacuumResponse
+  binaryMatches, CIRCUIT_TESTS, hasActiveAlarm, modeCommand, numericMatches,
+  safeShutdownCommands, setpointCommand, vacuumResponse
 } from '../js/commissioning-automation.js';
 
 test('alarm gate accepts operational NO_ERROR forms only', () => {
@@ -28,6 +28,8 @@ test('readback evaluators require complete evidence', () => {
   assert.equal(vacuumResponse(2, 3, 4).pass, false);
 });
 
-test('operator selections control the generated circuit queue', () => {
-  assert.deepEqual(selectedCircuitTests({ flush: true, drain: false, bypass: true }).map(item => item.key), ['flush', 'bypass']);
+test('guided circuit definitions bind modes to the expected readbacks', () => {
+  assert.deepEqual(CIRCUIT_TESTS.flush.outputs, ['flushPump_STATE', 'flushValve_STATE']);
+  assert.deepEqual(CIRCUIT_TESTS.drain.outputs, ['DrainPump_STATE', 'DrainValve_STATE']);
+  assert.deepEqual(CIRCUIT_TESTS.bypass.outputs, ['BypassValve_STATE']);
 });

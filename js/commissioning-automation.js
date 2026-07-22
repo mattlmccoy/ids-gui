@@ -55,9 +55,3 @@ export function vacuumResponse(baseline, current, minimumChange) {
   const delta = Math.abs(now - start);
   return { pass: delta >= minimum, delta };
 }
-
-export function selectedCircuitTests(selection = {}) {
-  return Object.entries(CIRCUIT_TESTS)
-    .filter(([key]) => selection[key] !== false)
-    .map(([key, definition]) => ({ key, ...definition }));
-}

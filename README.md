@@ -134,11 +134,13 @@ See `CHANGELOG.md` for full release notes.
   duplicate suppression. Each alert/recovery category can be enabled independently in
   Settings. Every category has a test-fire control that exercises Slack/ntfy delivery
   without changing the Worker's real incident state; a general test is also available.
-- Commissioning provides a guided 36-check physical I/O audit plus a locally gated
-  electronic runner for Flush, Drain, Bypass, and optional Run/vacuum response checks.
-  The runner requires live alarm telemetry and explicit safety acknowledgements, verifies
-  two consecutive readbacks, aborts on alarms/disconnects, and commands all modes OFF at
-  both boundaries. Physical behavior still requires an operator confirmation.
+- Commissioning is one guided workflow: passive checks advance automatically; Run/vacuum,
+  Flush, Drain, and Bypass introduce locally gated automation at their relevant step; and
+  notification delivery is tested inside the Alerts steps. Every data-bearing test includes
+  a live evidence plot. Automated circuits require live alarm telemetry and explicit safety
+  acknowledgements, verify two consecutive readbacks, abort on alarms/disconnects, command
+  all modes OFF at both boundaries, and complete linked mode/actuator checks together only
+  after operator confirmation of physical behavior.
 - The remote dashboard now includes allowlisted, read-only live system telemetry for phones.
 - Mobile control uses a separate operator token and an expiring Worker command queue. The
   desktop must be connected and locally enabled for 30 minutes; only Run, Stop, vacuum,

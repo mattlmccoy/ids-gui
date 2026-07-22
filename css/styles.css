@@ -569,6 +569,81 @@ html, body {
   align-self: flex-start;
   margin: 0.2rem 0 0 2.6rem;
 }
+
+/* ---------- Guided commissioning ---------- */
+.commission-test-card { animation: commission-card-in .32s ease-out; }
+.commission-runner {
+  margin: 0 0 1rem;
+  padding: 1rem;
+  border: 1px solid rgba(59,130,246,.35);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(145deg, rgba(59,130,246,.08), rgba(15,17,23,.35));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
+}
+.commission-runner.running { border-color: rgba(59,130,246,.8); box-shadow: 0 0 28px rgba(59,130,246,.12); }
+.commission-runner.complete { border-color: rgba(34,197,94,.7); background: linear-gradient(145deg, rgba(34,197,94,.08), rgba(15,17,23,.35)); }
+.commission-runner.failed { border-color: rgba(239,68,68,.7); }
+.commission-status {
+  display: inline-flex; align-items: center; gap: .4rem; padding: .3rem .65rem;
+  border-radius: 999px; color: var(--text-muted); background: rgba(148,163,184,.12);
+  font-size: .72rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+}
+.commission-status.running { color: #60a5fa; background: rgba(59,130,246,.16); animation: commission-pulse 1.4s ease-in-out infinite; }
+.commission-status.complete { color: #4ade80; background: rgba(34,197,94,.15); }
+.commission-status.failed, .commission-status.stopped { color: #f87171; background: rgba(239,68,68,.14); }
+.commission-phase-rail { display: grid; grid-template-columns: repeat(5, 1fr); gap: .35rem; margin-bottom: .75rem; }
+.commission-phase { position: relative; display: flex; flex-direction: column; align-items: center; gap: .25rem; color: var(--text-muted); text-transform: capitalize; }
+.commission-phase:not(:last-child)::after { content: ''; position: absolute; left: 62%; right: -38%; top: 13px; height: 2px; background: var(--border-color); }
+.commission-phase > span { z-index: 1; display: grid; place-items: center; width: 27px; height: 27px; border-radius: 50%; border: 2px solid var(--border-color); background: var(--bg-card); font-size: .7rem; font-weight: 700; }
+.commission-phase.done > span { border-color: #22c55e; background: #166534; color: white; }
+.commission-phase.done:not(:last-child)::after { background: #22c55e; }
+.commission-phase.active { color: #60a5fa; font-weight: 700; }
+.commission-phase.active > span { border-color: #3b82f6; color: white; background: #1d4ed8; animation: commission-ring 1.4s ease-out infinite; }
+.commission-evidence, .commission-gate { height: 100%; padding: .8rem; border: 1px solid var(--border-color); border-radius: .55rem; background: rgba(7,10,16,.35); }
+.commission-chart-wrap { height: 205px; margin-top: .55rem; }
+.commission-readbacks { display: flex; flex-wrap: wrap; gap: .4rem .8rem; min-height: 25px; }
+.commission-readbacks > span { color: var(--text-muted); font-size: .72rem; }
+.commission-readbacks i { display: inline-block; width: 7px; height: 7px; margin-right: .3rem; border-radius: 50%; background: var(--series-color); box-shadow: 0 0 7px var(--series-color); }
+.commission-readbacks strong { color: var(--text-primary); font-family: var(--font-mono); }
+.live-pill { display: inline-flex; align-items: center; gap: .3rem; color: #4ade80; font-size: .65rem; font-weight: 800; letter-spacing: .08em; }
+.live-pill > span { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 8px #22c55e; animation: commission-pulse 1.2s ease-in-out infinite; }
+.commission-interlocks { display: flex; flex-wrap: wrap; gap: .4rem; }
+.commission-interlocks span { padding: .2rem .45rem; border-radius: 999px; font-size: .68rem; font-weight: 700; }
+.commission-interlocks .ok { color: #4ade80; background: rgba(34,197,94,.12); }
+.commission-interlocks .bad { color: #f87171; background: rgba(239,68,68,.12); }
+.commission-result { display: flex; gap: .55rem; align-items: center; margin-top: .8rem; padding: .65rem .8rem; border-radius: .5rem; animation: commission-result-in .35s ease-out; }
+.commission-result.complete { color: #4ade80; background: rgba(34,197,94,.11); }
+.commission-result.failed, .commission-result.stopped { color: #f87171; background: rgba(239,68,68,.11); }
+.commission-confirm { animation: commission-success-glow 1.8s ease-in-out infinite; }
+.commission-alert-test { display: flex; align-items: center; gap: .9rem; margin-bottom: 1rem; padding: 1rem; border: 1px solid rgba(59,130,246,.35); border-radius: .6rem; background: linear-gradient(135deg, rgba(59,130,246,.08), transparent); animation: commission-card-in .3s ease-out; }
+.commission-alert-test.pass { border-color: rgba(34,197,94,.65); background: rgba(34,197,94,.07); }
+.commission-alert-test.fail { border-color: rgba(239,68,68,.65); background: rgba(239,68,68,.07); }
+.commission-alert-icon { display: grid; place-items: center; flex: 0 0 42px; width: 42px; height: 42px; border-radius: 50%; color: #60a5fa; background: rgba(59,130,246,.16); font-size: 1.25rem; }
+.commission-alert-test.running .commission-alert-icon { animation: commission-ring 1.2s ease-out infinite; }
+.commission-queue-row { display: flex; align-items: center; gap: .55rem; min-height: 40px; padding: .5rem .25rem; border-bottom: 1px solid var(--border-color); transition: color .2s ease, transform .2s ease; }
+.commission-queue-row.active { color: #60a5fa; font-weight: 700; transform: translateX(3px); }
+.commission-queue-row.complete { color: #4ade80; }
+.commission-queue-row.failed { color: #f87171; }
+.commission-queue-icon { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: rgba(148,163,184,.08); font-size: .68rem; }
+.commission-queue-row.active .commission-queue-icon { background: rgba(59,130,246,.18); animation: commission-pulse 1.4s ease-in-out infinite; }
+.commission-queue-row.complete .commission-queue-icon { background: rgba(34,197,94,.15); }
+#panel-validation .progress-bar { transition: width .55s cubic-bezier(.22,1,.36,1); background: linear-gradient(90deg, #2563eb, #38bdf8); }
+@keyframes commission-card-in { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+@keyframes commission-result-in { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: scale(1); } }
+@keyframes commission-pulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+@keyframes commission-ring { 0% { box-shadow: 0 0 0 0 rgba(59,130,246,.5); } 70%,100% { box-shadow: 0 0 0 9px rgba(59,130,246,0); } }
+@keyframes commission-success-glow { 0%,100% { box-shadow: 0 0 0 rgba(34,197,94,0); } 50% { box-shadow: 0 0 18px rgba(34,197,94,.28); } }
+@media (prefers-reduced-motion: reduce) {
+  .commission-test-card, .commission-status.running, .commission-phase.active > span,
+  .live-pill > span, .commission-result, .commission-confirm, .commission-alert-test,
+  .commission-alert-test.running .commission-alert-icon { animation: none !important; }
+}
+@media (max-width: 767px) {
+  .commission-phase small { font-size: .58rem; }
+  .commission-phase:not(:last-child)::after { left: 66%; right: -34%; }
+  .commission-alert-test { align-items: flex-start; flex-wrap: wrap; }
+  .commission-alert-test .btn { width: 100%; }
+}
 .chart-container-states { height: 360px; }
 .state-trace-picker {
   display: grid;

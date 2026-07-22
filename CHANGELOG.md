@@ -5,6 +5,10 @@ All notable changes to this project are documented in this file.
 ## 2026-07-22
 
 ### Added
+- Integrated commissioning automation directly into the step-by-step test wizard. Circuit
+  tests now show animated phase progress, live readback plots, safety interlocks, automatic
+  electronic analysis, and linked physical-confirmation results; alert delivery tests now
+  run from their matching guided steps.
 - Per-category test-fire buttons for Weir overflow, Supply overflow, firmware alarms,
   controller disconnects, and stale telemetry. Test events use normal Slack/ntfy delivery
   without changing live incident state or suppressing a subsequent real alert.

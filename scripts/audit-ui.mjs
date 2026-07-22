@@ -82,8 +82,8 @@ if (!charts.includes('pressureChart.options.scales.x.min = cutoff') || !charts.i
 for (const code of ["'HTC_ERROR'", "'HTC'", "'8192'"]) {
   if (!read('js/errors.js').includes(code)) throw new Error(`HTC firmware representation ${code} is not decoded`);
 }
-if (!validation.includes('Controller readback never proves physical safety')) throw new Error('Missing guided lab validation safety boundary');
-for (const marker of ['automationReady', 'safeShutdownCommands', 'Stop and command all OFF', 'VacuumPump_STATE']) {
+if (!validation.includes('controller readback never proves physical safety')) throw new Error('Missing guided lab validation safety boundary');
+for (const marker of ['automationReady', 'safeShutdownCommands', 'Stop & command all OFF', 'VacuumPump_STATE', 'drawEvidenceChart', 'testCurrentAlert', 'complete linked checks']) {
   if (!validation.includes(marker)) throw new Error(`Automated commissioning runner is missing ${marker}`);
 }
 if (!validation.includes('Finish certification')) throw new Error('Lab validation certification workflow is missing');
