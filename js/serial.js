@@ -116,7 +116,7 @@ async function readLoop() {
     // If we get here and readLoop is still active, the stream ended unexpectedly
     if (readLoopActive) {
       store.log('warning', 'Serial stream ended — device may have disconnected');
-      await disconnect();
+      await disconnect('unexpected');
       break;
     }
   }
@@ -161,7 +161,7 @@ export async function connect() {
     // Listen for disconnect
     port.addEventListener('disconnect', () => {
       store.log('warning', 'USB device disconnected');
-      disconnect();
+      disconnect('unexpected');
     });
 
   } catch (err) {
@@ -172,7 +172,7 @@ export async function connect() {
   }
 }
 
-export async function disconnect() {
+export async function disconnect(reason = 'manual') {
   readLoopActive = false;
   stopPolling();
 
@@ -189,6 +189,7 @@ export async function disconnect() {
   buffer = '';
 
   if (store.connection !== 'DISCONNECTED') {
+    store.emit('disconnect-reason', reason);
     store.setConnection('DISCONNECTED');
     store.log('info', 'Disconnected');
   }

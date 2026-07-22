@@ -6,6 +6,10 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const output = path.join(root, '_site');
 const publicEntries = [
   'index.html',
+  'remote.html',
+  'manifest.webmanifest',
+  'service-worker.js',
+  'assets',
   'nominal-config.json',
   'ink-check-sample-data-2weeks.json',
   'css',

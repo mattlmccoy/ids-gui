@@ -4,6 +4,7 @@ import store from './state.js';
 import { isDataKeyVisible } from './heater-visibility.js';
 import { getPollIntervalMs, setPollIntervalMs, getNominalPollIntervalMs } from './serial.js';
 import { FLOATS, getFloatDisplayState, formatFloatState } from './float-state.js';
+import { initTrendHistory, persistTrendPoint, clearTrendHistory } from './trend-history.js';
 
 const MAX_POINTS = 18_000; // one hour at the fastest supported 200 ms poll rate
 const FLOAT_TRACKS_KEY = 'ids-show-float-tracks';
@@ -36,6 +37,8 @@ let paused = false;
 let windowMs = TIME_WINDOWS[1].ms;
 let maxObservedPressure = 0;
 let showFloatTracks = readFloatTracksPreference();
+let replaySamples = [];
+let replayTimer = null;
 
 export function initChartsTab() {
   const panel = document.getElementById('panel-trending');
@@ -48,6 +51,17 @@ export function initChartsTab() {
     updateFloatStatus(store.data);
     refreshCharts();
   });
+  store.on('replay', updateReplayControls);
+  initTrendHistory().then(samples => {
+    if (!samples.length || dataBuffer.length) return;
+    dataBuffer = samples.slice(-MAX_POINTS);
+    for (const point of dataBuffer) {
+      const pressure = Number(point.Pressure_STATE);
+      if (Number.isFinite(pressure)) maxObservedPressure = Math.max(maxObservedPressure, pressure);
+    }
+    refreshCharts();
+    store.log('info', `Restored ${dataBuffer.length} persisted trend samples`);
+  }).catch(error => console.warn('[trend-history] Restore failed:', error));
   document.getElementById('tab-trending')?.addEventListener('shown.bs.tab', () => {
     requestAnimationFrame(() => {
       tempChart?.resize();
@@ -74,6 +88,19 @@ function buildHTML() {
       </button>
       <button class="btn-control btn-reboot" id="btn-chart-clear" style="padding:0.25rem 0.6rem;font-size:0.75rem">
         <i class="bi bi-trash me-1"></i>Clear
+      </button>
+      <button class="btn-control btn-disconnect" id="btn-replay-save" style="padding:0.25rem 0.6rem;font-size:0.75rem" title="Save current trend data as a replay file">
+        <i class="bi bi-record-circle me-1"></i>Save replay
+      </button>
+      <button class="btn-control btn-disconnect" id="btn-replay-load" style="padding:0.25rem 0.6rem;font-size:0.75rem" title="Load a saved IDS replay file">
+        <i class="bi bi-folder2-open me-1"></i>Load replay
+      </button>
+      <input type="file" id="replay-file-input" accept="application/json,.json" class="d-none">
+      <select class="form-select form-select-sm" id="replay-speed" style="width:72px" title="Replay speed">
+        <option value="1">1×</option><option value="2">2×</option><option value="5">5×</option><option value="10">10×</option>
+      </select>
+      <button class="btn-control btn-connect" id="btn-replay-play" disabled style="padding:0.25rem 0.6rem;font-size:0.75rem">
+        <i class="bi bi-play-fill me-1"></i>Play
       </button>
       <span style="width:1px;height:20px;background:var(--border-color)"></span>
       <span style="color:var(--text-secondary);font-weight:500;font-size:0.82rem">Data Poll (ms):</span>
@@ -295,8 +322,13 @@ function bindEvents() {
   document.getElementById('btn-chart-clear').addEventListener('click', () => {
     dataBuffer = [];
     maxObservedPressure = 0;
+    clearTrendHistory().catch(error => console.warn('[trend-history] Clear failed:', error));
     refreshCharts();
   });
+  document.getElementById('btn-replay-save')?.addEventListener('click', saveReplayFile);
+  document.getElementById('btn-replay-load')?.addEventListener('click', () => document.getElementById('replay-file-input')?.click());
+  document.getElementById('replay-file-input')?.addEventListener('change', loadReplayFile);
+  document.getElementById('btn-replay-play')?.addEventListener('click', toggleReplay);
   const pollInput = document.getElementById('poll-interval-ms');
   const pollApply = document.getElementById('btn-poll-apply');
   const pollNominal = document.getElementById('btn-poll-nominal');
@@ -347,6 +379,7 @@ function onData(data) {
   if (!hasValue) return;
   dataBuffer.push(point);
   if (dataBuffer.length > MAX_POINTS) dataBuffer = dataBuffer.slice(-MAX_POINTS);
+  if (!store.replayActive) persistTrendPoint(point);
   refreshCharts();
 }
 
@@ -421,4 +454,96 @@ function updateFloatStatus(data) {
 
 function readFloatTracksPreference() {
   try { return localStorage.getItem(FLOAT_TRACKS_KEY) === 'true'; } catch (_) { return false; }
+}
+
+function saveReplayFile() {
+  if (!dataBuffer.length) {
+    store.log('warning', 'No trend data is available to save as a replay');
+    return;
+  }
+  const recording = {
+    format: 'ids-replay-v1',
+    createdAt: new Date().toISOString(),
+    sampleCount: dataBuffer.length,
+    samples: dataBuffer
+  };
+  const blob = new Blob([JSON.stringify(recording)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `ids-replay-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+  store.log('info', `Saved ${dataBuffer.length} samples as a replay`);
+}
+
+async function loadReplayFile(event) {
+  const file = event.target.files?.[0];
+  event.target.value = '';
+  if (!file) return;
+  try {
+    const parsed = JSON.parse(await file.text());
+    if (parsed.format !== 'ids-replay-v1' || !Array.isArray(parsed.samples) || !parsed.samples.length) {
+      throw new Error('not an IDS replay file');
+    }
+    replaySamples = parsed.samples
+      .filter(sample => sample && Number.isFinite(Number(sample.timestamp)))
+      .sort((a, b) => Number(a.timestamp) - Number(b.timestamp));
+    if (!replaySamples.length) throw new Error('recording has no valid samples');
+    updateReplayControls();
+    store.log('info', `Loaded replay with ${replaySamples.length} samples`);
+  } catch (error) {
+    store.log('error', `Replay load failed: ${error.message}`);
+  }
+}
+
+function toggleReplay() {
+  if (store.replayActive) stopReplay();
+  else startReplay();
+}
+
+function startReplay() {
+  if (!replaySamples.length) return;
+  const speed = Number(document.getElementById('replay-speed')?.value) || 1;
+  let index = 0;
+  store.setReplayActive(true);
+  const playNext = () => {
+    if (!store.replayActive || index >= replaySamples.length) {
+      stopReplay();
+      return;
+    }
+    const current = replaySamples[index];
+    const { timestamp, id, ...frame } = current;
+    store.setData(frame);
+    index += 1;
+    if (index >= replaySamples.length) return playNext();
+    const recordedDelay = Number(replaySamples[index].timestamp) - Number(timestamp);
+    replayTimer = setTimeout(playNext, Math.min(Math.max(recordedDelay / speed, 10), 2000));
+  };
+  playNext();
+  store.log('info', `Replay started at ${speed}× (remote alerts suppressed)`);
+}
+
+function stopReplay() {
+  if (replayTimer) clearTimeout(replayTimer);
+  replayTimer = null;
+  if (store.replayActive) {
+    store.setReplayActive(false);
+    store.log('info', 'Replay stopped');
+  }
+  updateReplayControls();
+}
+
+function updateReplayControls() {
+  const button = document.getElementById('btn-replay-play');
+  const speed = document.getElementById('replay-speed');
+  if (!button) return;
+  button.disabled = !replaySamples.length;
+  button.className = `btn-control ${store.replayActive ? 'btn-reboot' : 'btn-connect'}`;
+  button.style.padding = '0.25rem 0.6rem';
+  button.style.fontSize = '0.75rem';
+  button.innerHTML = store.replayActive
+    ? '<i class="bi bi-stop-fill me-1"></i>Stop'
+    : '<i class="bi bi-play-fill me-1"></i>Play';
+  if (speed) speed.disabled = store.replayActive;
 }

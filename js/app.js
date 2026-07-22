@@ -20,6 +20,7 @@ function boot() {
   initThemeToggle();
   initSerialPicker();
   loadDeploymentInfo();
+  initPWA();
 
   // Check Web Serial support
   if (!isSerialSupported()) {
@@ -81,6 +82,29 @@ async function loadDeploymentInfo() {
   } catch (_) {
     // Electron and ad-hoc local servers do not include build-info.json.
   }
+}
+
+function initPWA() {
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    navigator.serviceWorker.register('./service-worker.js').catch(error => {
+      console.warn('[pwa] Service worker registration failed:', error);
+    });
+  }
+  let installPrompt = null;
+  const button = document.getElementById('install-app');
+  window.addEventListener('beforeinstallprompt', event => {
+    event.preventDefault();
+    installPrompt = event;
+    button?.classList.remove('d-none');
+  });
+  button?.addEventListener('click', async () => {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    await installPrompt.userChoice;
+    installPrompt = null;
+    button.classList.add('d-none');
+  });
+  window.addEventListener('appinstalled', () => button?.classList.add('d-none'));
 }
 
 // Boot immediately if DOM is already ready (module loaded after DOMContentLoaded)

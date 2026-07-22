@@ -7,7 +7,10 @@ import { loadNominalConfig } from './nominal-config.js';
 import { isWeirOverflowInverted, setWeirOverflowInverted } from './float-state.js';
 import {
   areWeirOverflowNotificationsEnabled,
-  setWeirOverflowNotificationsEnabled
+  setWeirOverflowNotificationsEnabled,
+  getRemoteAlertConfig,
+  setRemoteAlertConfig,
+  sendRemoteTestAlert
 } from './notifications.js';
 
 /* ---------- Settings Groups ---------- */
@@ -163,6 +166,65 @@ function buildHTML() {
           </div>
         </div>
       </div>
+      <div class="col-xl-8 col-lg-12">
+        <div class="dash-card settings-group mb-3">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-cloud-arrow-up me-1"></i> Remote Alerts</span>
+            <span class="badge text-bg-secondary" id="remote-alert-status">Not configured</span>
+          </div>
+          <div class="card-body">
+            <div class="form-check form-switch mb-3">
+              <input class="form-check-input" type="checkbox" role="switch" id="toggle-remote-alerts">
+              <label class="form-check-label" for="toggle-remote-alerts">
+                Send OVF, recovery, disconnect, and stale-data alerts
+              </label>
+            </div>
+            <div class="row g-2">
+              <div class="col-lg-7">
+                <label class="form-label small mb-1" for="remote-worker-url">Cloudflare Worker URL</label>
+                <input class="form-control form-control-sm font-monospace" type="url"
+                       id="remote-worker-url" placeholder="https://ids-alert-relay.…workers.dev">
+              </div>
+              <div class="col-lg-5">
+                <label class="form-label small mb-1" for="remote-device-id">Device ID</label>
+                <input class="form-control form-control-sm font-monospace" id="remote-device-id"
+                       maxlength="80" placeholder="ids-lab-computer">
+              </div>
+              <div class="col-lg-7">
+                <label class="form-label small mb-1" for="remote-device-token">Device token</label>
+                <input class="form-control form-control-sm font-monospace" type="password"
+                       id="remote-device-token" autocomplete="off" placeholder="Worker DEVICE_TOKEN">
+              </div>
+              <div class="col-lg-5">
+                <label class="form-label small mb-1" for="remote-ntfy-topic">Private ntfy topic (free fallback)</label>
+                <input class="form-control form-control-sm font-monospace" type="password"
+                       id="remote-ntfy-topic" autocomplete="off" maxlength="64" placeholder="Private topic name">
+              </div>
+              <div class="col-6 col-lg-2">
+                <label class="form-label small mb-1" for="remote-debounce">Debounce (s)</label>
+                <input class="form-control form-control-sm" type="number" id="remote-debounce"
+                       min="0" max="30" step="1">
+              </div>
+              <div class="col-6 col-lg-3">
+                <label class="form-label small mb-1" for="remote-stale-after">Stale after (s)</label>
+                <input class="form-control form-control-sm" type="number" id="remote-stale-after"
+                       min="5" max="300" step="1">
+              </div>
+            </div>
+            <div class="d-flex align-items-center gap-2 mt-3 flex-wrap">
+              <button class="btn-control btn-connect" id="btn-save-remote-alerts">
+                <i class="bi bi-check-lg me-1"></i>Save
+              </button>
+              <button class="btn-control btn-disconnect" id="btn-test-remote-alerts">
+                <i class="bi bi-send me-1"></i>Send test alert
+              </button>
+              <span class="small" id="remote-alert-feedback" style="color:var(--text-muted)">
+                Credentials and the private ntfy topic stay in this browser and are not included in GitHub Pages.
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="small mt-1" style="color:var(--text-muted)">
       <i class="bi bi-info-circle me-1"></i>
@@ -174,6 +236,7 @@ function buildHTML() {
 function bindEvents() {
   syncWeirOverflowToggle();
   syncNotificationToggle();
+  syncRemoteAlertForm();
   document.getElementById('toggle-weir-ovf-invert')?.addEventListener('change', e => {
     setWeirOverflowInverted(e.target.checked);
   });
@@ -190,6 +253,24 @@ function bindEvents() {
   document.getElementById('btn-weir-invert')?.addEventListener('click', () => {
     send('{"WeirFloatInvert_SETUP":"0"}');
     store.log('command', 'WeirFloatInvert_SETUP = 0');
+  });
+  document.getElementById('btn-save-remote-alerts')?.addEventListener('click', () => {
+    const config = saveRemoteAlertForm();
+    setRemoteFeedback(config.enabled ? 'Remote alerts enabled.' : 'Remote alert settings saved (disabled).', 'success');
+  });
+  document.getElementById('btn-test-remote-alerts')?.addEventListener('click', async e => {
+    const button = e.currentTarget;
+    button.disabled = true;
+    setRemoteFeedback('Sending test alert…');
+    try {
+      const result = await sendRemoteTestAlert(readRemoteAlertForm());
+      const delivery = result.event?.notification_status || 'accepted';
+      setRemoteFeedback(`Test alert ${delivery}.`, delivery === 'failed' ? 'danger' : 'success');
+    } catch (error) {
+      setRemoteFeedback(`Test failed: ${error.message}`, 'danger');
+    } finally {
+      button.disabled = false;
+    }
   });
 
   document.querySelectorAll('.btn-send-setting').forEach(btn => {
@@ -235,6 +316,59 @@ function syncWeirOverflowToggle() {
 function syncNotificationToggle() {
   const toggle = document.getElementById('toggle-weir-ovf-notifications');
   if (toggle) toggle.checked = areWeirOverflowNotificationsEnabled();
+}
+
+function syncRemoteAlertForm() {
+  const config = getRemoteAlertConfig();
+  const fields = {
+    'toggle-remote-alerts': config.enabled,
+    'remote-worker-url': config.workerUrl,
+    'remote-device-token': config.deviceToken,
+    'remote-ntfy-topic': config.ntfyTopic,
+    'remote-device-id': config.deviceId,
+    'remote-debounce': config.debounceSeconds,
+    'remote-stale-after': config.staleAfterSeconds
+  };
+  for (const [id, value] of Object.entries(fields)) {
+    const element = document.getElementById(id);
+    if (!element) continue;
+    if (element.type === 'checkbox') element.checked = !!value;
+    else element.value = value;
+  }
+  updateRemoteStatus(config);
+}
+
+function readRemoteAlertForm() {
+  return {
+    enabled: document.getElementById('toggle-remote-alerts')?.checked,
+    workerUrl: document.getElementById('remote-worker-url')?.value,
+    deviceToken: document.getElementById('remote-device-token')?.value,
+    ntfyTopic: document.getElementById('remote-ntfy-topic')?.value,
+    deviceId: document.getElementById('remote-device-id')?.value,
+    debounceSeconds: document.getElementById('remote-debounce')?.value,
+    staleAfterSeconds: document.getElementById('remote-stale-after')?.value
+  };
+}
+
+function saveRemoteAlertForm() {
+  const config = setRemoteAlertConfig(readRemoteAlertForm());
+  syncRemoteAlertForm();
+  return config;
+}
+
+function updateRemoteStatus(config) {
+  const status = document.getElementById('remote-alert-status');
+  if (!status) return;
+  const configured = !!(config.workerUrl && config.deviceToken && config.deviceId);
+  status.textContent = config.enabled && configured ? 'Enabled' : configured ? 'Configured' : 'Not configured';
+  status.className = `badge ${config.enabled && configured ? 'text-bg-success' : configured ? 'text-bg-warning' : 'text-bg-secondary'}`;
+}
+
+function setRemoteFeedback(message, kind = '') {
+  const element = document.getElementById('remote-alert-feedback');
+  if (!element) return;
+  element.textContent = message;
+  element.style.color = kind === 'success' ? 'var(--accent-green)' : kind === 'danger' ? 'var(--accent-red)' : 'var(--text-muted)';
 }
 
 function autoPopulate(data) {

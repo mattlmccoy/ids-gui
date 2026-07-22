@@ -7,6 +7,7 @@
   "scripts": {
     "start": "electron .",
     "test": "node scripts/audit-ui.mjs",
+    "test:worker": "node worker/test/integration.mjs",
     "build:pages": "node scripts/build-pages.mjs",
     "copy-vendor": "node scripts/copy-vendor.js",
     "postinstall": "npm run copy-vendor",
@@ -28,6 +29,10 @@
     "productName": "Radio Frequency AM Ink Delivery System",
     "files": [
       "index.html",
+      "remote.html",
+      "manifest.webmanifest",
+      "service-worker.js",
+      "assets/**/*",
       "nominal-config.json",
       "css/**/*",
       "js/**/*",

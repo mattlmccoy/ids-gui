@@ -8,6 +8,7 @@
  *   'log'          — new log entry                        (payload: { severity, message, timestamp })
  *   'command-sent' — command sent to firmware              (payload: string)
  *   'heater-visibility' — heater visibility changed        (payload: object)
+ *   'disconnect-reason' — manual or unexpected disconnect   (payload: string)
  */
 
 class StateStore {
@@ -26,6 +27,9 @@ class StateStore {
 
     /** Session start time */
     this.sessionStart = null;
+
+    /** True while a saved telemetry recording is being replayed */
+    this.replayActive = false;
 
     /** Heater visibility flags used for UI/chart/log filtering */
     this.heaterVisibility = {
@@ -99,6 +103,11 @@ class StateStore {
   /** Get heater visibility map */
   getHeaterVisibility() {
     return this.heaterVisibility;
+  }
+
+  setReplayActive(active) {
+    this.replayActive = !!active;
+    this.emit('replay', this.replayActive);
   }
 }
 
