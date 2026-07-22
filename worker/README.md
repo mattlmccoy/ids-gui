@@ -4,6 +4,11 @@ This Cloudflare Worker accepts authenticated state transitions from the IDS UI,
 stores them in D1, and sends mobile push notifications through ntfy. The public
 GitHub Pages app never receives the ntfy topic or ntfy access token.
 
+Supported operational alerts are Weir overflow, Supply overflow, firmware alarm,
+unexpected controller disconnect, and stale telemetry. Each condition is stored as
+an active/recovered state, so repeated device frames do not generate repeated push
+notifications.
+
 Production relay: `https://ids-alert-relay.mattlmccoy.workers.dev`
 
 ## Required Worker secrets

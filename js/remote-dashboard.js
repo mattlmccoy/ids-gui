@@ -171,7 +171,13 @@ function setConnection(connected, text) {
 }
 
 function labelFor(key) {
-  return ({ weir_ovf: 'Weir OVF', controller_connection: 'Controller connection', data_stale: 'Telemetry freshness' })[key] || key;
+  return ({
+    weir_ovf: 'Weir OVF',
+    supply_ovf: 'Supply OVF',
+    firmware_alarm: 'Firmware alarm',
+    controller_connection: 'Controller connection',
+    data_stale: 'Telemetry freshness'
+  })[key] || key;
 }
 
 function formatTime(value) {

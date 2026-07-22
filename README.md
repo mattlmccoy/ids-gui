@@ -128,6 +128,9 @@ See `CHANGELOG.md` for full release notes.
 - The latest software/protocol review is documented in `SYSTEM_AUDIT.md`.
 - Trending includes live float status plus an optional separated float-state history chart.
 - Settings includes persisted Weir OVF display inversion and opt-in local overflow notifications.
+- Remote alerts are edge-triggered and cover Weir/Supply overflow, firmware alarms,
+  unexpected controller disconnects, and stale telemetry, with recovery events and
+  duplicate suppression.
 
 ## Troubleshooting
 

@@ -76,6 +76,30 @@ try {
   assert.equal(result.event.notification_status, 'sent');
   assert.equal(ntfyMessages.length, 2);
 
+  response = await postEvent('supply_ovf_active', `${runId}-supply-active-1`);
+  result = await response.json();
+  assert.equal(result.event.notification_status, 'sent');
+  assert.equal(ntfyMessages.length, 3);
+
+  response = await postEvent('supply_ovf_active', `${runId}-supply-active-2`);
+  result = await response.json();
+  assert.equal(result.event.notification_status, 'suppressed');
+  assert.equal(ntfyMessages.length, 3);
+
+  response = await postEvent('supply_ovf_recovered', `${runId}-supply-recovered-1`);
+  assert.equal((await response.json()).event.notification_status, 'sent');
+  assert.equal(ntfyMessages.length, 4);
+
+  response = await postEvent('firmware_alarm_active', `${runId}-alarm-active-1`);
+  result = await response.json();
+  assert.equal(result.event.notification_status, 'sent');
+  assert.equal(ntfyMessages.length, 5);
+  assert.equal(ntfyMessages[4].headers.priority, '5');
+
+  response = await postEvent('firmware_alarm_recovered', `${runId}-alarm-recovered-1`);
+  assert.equal((await response.json()).event.notification_status, 'sent');
+  assert.equal(ntfyMessages.length, 6);
+
   response = await api(`/api/v1/events/${result.event.id}/ack`, 'local-viewer-token', {
     method: 'POST', body: JSON.stringify({ by: 'Integration test' })
   });

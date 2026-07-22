@@ -176,8 +176,12 @@ function buildHTML() {
             <div class="form-check form-switch mb-3">
               <input class="form-check-input" type="checkbox" role="switch" id="toggle-remote-alerts">
               <label class="form-check-label" for="toggle-remote-alerts">
-                Send OVF, recovery, disconnect, and stale-data alerts
+                Send critical IDS alerts and recoveries
               </label>
+            </div>
+            <div class="small mb-3" style="color:var(--text-muted)">
+              Includes Weir/Supply overflow, firmware alarms, unexpected disconnects, and stale telemetry.
+              Repeated readings are suppressed; alerts are sent only after the configured debounce.
             </div>
             <div class="row g-2">
               <div class="col-lg-7">

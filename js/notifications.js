@@ -2,6 +2,8 @@
 
 import store from './state.js';
 import { getFloatDisplayState } from './float-state.js';
+import { decodeAlarmStatus, isActiveError } from './errors.js';
+import { shouldSuppressHeaterError } from './heater-visibility.js';
 
 const LOCAL_ENABLED_KEY = 'ids-weir-ovf-notifications';
 const REMOTE_CONFIG_KEY = 'ids-remote-alert-config-v1';
@@ -16,6 +18,7 @@ const DEFAULT_CONFIG = {
 };
 
 let previousWeirState = null;
+let previousSupplyOverflowState = null;
 let lastDataAt = 0;
 let staleTimer = null;
 let lastDisconnectReason = 'unknown';
@@ -72,6 +75,8 @@ export function setRemoteAlertConfig(next) {
 export function initNotifications() {
   store.on('data', onData);
   store.on('float-config', () => { previousWeirState = null; resetCondition('weir_ovf'); });
+  store.on('error', onAlarm);
+  store.on('heater-visibility', () => onAlarm({ raw: store.alarmRaw }));
   store.on('disconnect-reason', reason => { lastDisconnectReason = reason || 'unknown'; });
   store.on('connection', onConnection);
   staleTimer = setInterval(checkStaleData, 2000);
@@ -91,20 +96,51 @@ async function onData(data) {
     transitionCondition('data_stale', false, 'data_stale', 'data_recovered');
   }
 
-  if (data.WeirOverflowFloat_STATE === undefined) return;
-  const state = getFloatDisplayState('WeirOverflowFloat_STATE', data.WeirOverflowFloat_STATE);
-  if (state === null) return;
-
-  if (previousWeirState === null) {
-    previousWeirState = state;
-    establishCondition('weir_ovf', state === 1);
-    return;
+  if (data.WeirOverflowFloat_STATE !== undefined) {
+    const state = getFloatDisplayState('WeirOverflowFloat_STATE', data.WeirOverflowFloat_STATE);
+    if (state !== null) {
+      if (previousWeirState === null) {
+        if (!conditions.has('weir_ovf')) establishCondition('weir_ovf', false);
+        if (state === 1) {
+          showLocalWeirAlert(data);
+          transitionCondition('weir_ovf', true, 'weir_ovf_active', 'weir_ovf_recovered');
+        } else {
+          transitionCondition('weir_ovf', false, 'weir_ovf_active', 'weir_ovf_recovered');
+        }
+      } else if (state !== previousWeirState) {
+        if (previousWeirState === 0 && state === 1) showLocalWeirAlert(data);
+        transitionCondition('weir_ovf', state === 1, 'weir_ovf_active', 'weir_ovf_recovered');
+      }
+      previousWeirState = state;
+    }
   }
-  if (state === previousWeirState) return;
 
-  if (previousWeirState === 0 && state === 1) showLocalWeirAlert(data);
-  transitionCondition('weir_ovf', state === 1, 'weir_ovf_active', 'weir_ovf_recovered');
-  previousWeirState = state;
+  if (data.SupplyOverflowFloat_STATE !== undefined) {
+    const state = getFloatDisplayState('SupplyOverflowFloat_STATE', data.SupplyOverflowFloat_STATE);
+    if (state !== null) {
+      if (previousSupplyOverflowState === null) {
+        if (!conditions.has('supply_ovf')) establishCondition('supply_ovf', false);
+        transitionCondition('supply_ovf', state === 1, 'supply_ovf_active', 'supply_ovf_recovered');
+      } else if (state !== previousSupplyOverflowState) {
+        transitionCondition('supply_ovf', state === 1, 'supply_ovf_active', 'supply_ovf_recovered');
+      }
+      previousSupplyOverflowState = state;
+    }
+  }
+}
+
+function onAlarm({ raw } = {}) {
+  if (store.replayActive) return;
+  const decoded = decodeAlarmStatus(raw);
+  const active = isActiveError(decoded.error.code) && !shouldSuppressHeaterError(decoded.error.code, raw);
+  if (!conditions.has('firmware_alarm')) establishCondition('firmware_alarm', false);
+  const activeMessage = active
+    ? `Firmware reported ${decoded.error.code}: ${decoded.error.title}. ${decoded.error.action}`
+    : null;
+  transitionCondition(
+    'firmware_alarm', active, 'firmware_alarm_active', 'firmware_alarm_recovered',
+    activeMessage, 'The IDS firmware alarm returned to NO_ERROR.'
+  );
 }
 
 function onConnection(state) {
@@ -117,6 +153,7 @@ function onConnection(state) {
   }
   if (state === 'DISCONNECTED') {
     previousWeirState = null;
+    previousSupplyOverflowState = null;
     transitionCondition('data_stale', false, 'data_stale', 'data_recovered');
     if (lastDisconnectReason === 'unexpected') {
       transitionCondition('controller_connection', true, 'controller_disconnected', 'controller_reconnected');
@@ -145,7 +182,7 @@ function resetCondition(key) {
   conditions.delete(key);
 }
 
-function transitionCondition(key, active, activeType, recoveredType) {
+function transitionCondition(key, active, activeType, recoveredType, activeMessage = null, recoveredMessage = null) {
   const value = !!active;
   const existing = conditions.get(key);
   if (!existing) {
@@ -165,7 +202,7 @@ function transitionCondition(key, active, activeType, recoveredType) {
     existing.timer = null;
     if (existing.observed !== value) return;
     try {
-      await postRemoteEvent(value ? activeType : recoveredType, null, config);
+      await postRemoteEvent(value ? activeType : recoveredType, value ? activeMessage : recoveredMessage, config);
       existing.sentActive = value;
       store.log(value ? 'warning' : 'info', `Remote alert sent: ${value ? activeType : recoveredType}`);
     } catch (error) {
@@ -232,6 +269,10 @@ async function publishDirectNtfy(type, body, config) {
   const definition = {
     weir_ovf_active: ['IDS Weir OVF activated', '5', 'rotating_light,droplet'],
     weir_ovf_recovered: ['IDS Weir OVF cleared', '3', 'white_check_mark,droplet'],
+    supply_ovf_active: ['IDS Supply OVF activated', '5', 'rotating_light,droplet'],
+    supply_ovf_recovered: ['IDS Supply OVF cleared', '3', 'white_check_mark,droplet'],
+    firmware_alarm_active: ['IDS firmware alarm', '5', 'rotating_light,warning'],
+    firmware_alarm_recovered: ['IDS firmware alarm cleared', '3', 'white_check_mark,wrench'],
     controller_disconnected: ['IDS controller disconnected', '4', 'warning,electric_plug'],
     controller_reconnected: ['IDS controller reconnected', '3', 'white_check_mark,electric_plug'],
     data_stale: ['IDS data stream is stale', '4', 'warning,hourglass'],
@@ -242,6 +283,10 @@ async function publishDirectNtfy(type, body, config) {
   const defaultMessages = {
     weir_ovf_active: `Weir overflow float activated on ${location}. Check the ink delivery system.`,
     weir_ovf_recovered: `Weir overflow float returned to normal on ${location}.`,
+    supply_ovf_active: `Supply overflow float activated on ${location}. Check the ink supply immediately.`,
+    supply_ovf_recovered: `Supply overflow float returned to normal on ${location}.`,
+    firmware_alarm_active: `The IDS firmware reported an active alarm on ${location}. Check the controller.`,
+    firmware_alarm_recovered: `The IDS firmware alarm cleared on ${location}.`,
     controller_disconnected: `The IDS controller disconnected from ${location}.`,
     controller_reconnected: `The IDS controller reconnected to ${location}.`,
     data_stale: `No fresh IDS telemetry has been received from ${location}.`,

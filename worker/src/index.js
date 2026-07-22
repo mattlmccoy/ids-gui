@@ -7,6 +7,22 @@ const EVENT_DEFINITIONS = {
     alertKey: 'weir_ovf', phase: 'recovered', severity: 'info',
     title: 'IDS Weir OVF cleared', tags: 'white_check_mark,droplet'
   },
+  supply_ovf_active: {
+    alertKey: 'supply_ovf', phase: 'active', severity: 'urgent',
+    title: 'IDS Supply OVF activated', tags: 'rotating_light,droplet'
+  },
+  supply_ovf_recovered: {
+    alertKey: 'supply_ovf', phase: 'recovered', severity: 'info',
+    title: 'IDS Supply OVF cleared', tags: 'white_check_mark,droplet'
+  },
+  firmware_alarm_active: {
+    alertKey: 'firmware_alarm', phase: 'active', severity: 'urgent',
+    title: 'IDS firmware alarm', tags: 'rotating_light,warning'
+  },
+  firmware_alarm_recovered: {
+    alertKey: 'firmware_alarm', phase: 'recovered', severity: 'info',
+    title: 'IDS firmware alarm cleared', tags: 'white_check_mark,wrench'
+  },
   controller_disconnected: {
     alertKey: 'controller_connection', phase: 'active', severity: 'warning',
     title: 'IDS controller disconnected', tags: 'warning,electric_plug'
@@ -197,6 +213,10 @@ function defaultMessage(type, location) {
   const messages = {
     weir_ovf_active: `Weir overflow float activated on ${location}. Check the ink delivery system.`,
     weir_ovf_recovered: `Weir overflow float returned to normal on ${location}.`,
+    supply_ovf_active: `Supply overflow float activated on ${location}. Check the ink supply immediately.`,
+    supply_ovf_recovered: `Supply overflow float returned to normal on ${location}.`,
+    firmware_alarm_active: `The IDS firmware reported an active alarm on ${location}. Check the controller.`,
+    firmware_alarm_recovered: `The IDS firmware alarm cleared on ${location}.`,
     controller_disconnected: `The IDS controller disconnected from ${location}.`,
     controller_reconnected: `The IDS controller reconnected to ${location}.`,
     data_stale: `No fresh IDS telemetry has been received from ${location}.`,
