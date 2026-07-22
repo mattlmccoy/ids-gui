@@ -199,14 +199,16 @@ function buildHTML() {
             </div>
             <div class="remote-notification-grid mb-3">
               ${REMOTE_NOTIFICATION_OPTIONS.map(option => `
-                <label class="remote-notification-option" for="remote-notify-${option.key}">
-                  <span class="form-check form-switch mb-0">
+                <div class="remote-notification-option">
+                  <label class="form-check form-switch mb-0" for="remote-notify-${option.key}">
                     <input class="form-check-input remote-notification-toggle" type="checkbox" role="switch"
                            id="remote-notify-${option.key}" data-notification-key="${option.key}">
                     <span class="form-check-label fw-semibold">${option.label}</span>
-                  </span>
-                  <span>${option.detail}</span>
-                </label>
+                  </label>
+                  <span class="remote-notification-detail">${option.detail}</span>
+                  <button type="button" class="btn btn-sm btn-outline-primary remote-notification-test"
+                          data-alert-test="${option.key}"><i class="bi bi-send me-1"></i>Test fire</button>
+                </div>
               `).join('')}
             </div>
             <div class="row g-2">
@@ -299,23 +301,14 @@ function bindEvents() {
     setRemoteFeedback(config.enabled ? 'Remote alerts enabled.' : 'Remote alert settings saved (disabled).', 'success');
   });
   document.getElementById('btn-test-remote-alerts')?.addEventListener('click', async e => {
-    const button = e.currentTarget;
-    button.disabled = true;
-    setRemoteFeedback('Sending test alert…');
-    try {
-      const result = await sendRemoteTestAlert(readRemoteAlertForm());
-      const delivery = result.event?.notification_status || 'accepted';
-      const channels = result.deliveries
-        ? ` ntfy: ${result.deliveries.ntfy}; Slack: ${result.deliveries.slack}.`
-        : '';
-      const relayError = result.event?.notification_error ? ` Relay error: ${result.event.notification_error}.` : '';
-      const fallback = result.directFallback ? ' Browser fallback delivered directly to ntfy.' : '';
-      setRemoteFeedback(`Test alert ${delivery}.${channels}${relayError}${fallback}`, delivery === 'failed' ? 'danger' : 'success');
-    } catch (error) {
-      setRemoteFeedback(`Test failed: ${error.message}`, 'danger');
-    } finally {
-      button.disabled = false;
-    }
+    await testRemoteAlert(e.currentTarget, null, 'General');
+  });
+  document.querySelectorAll('[data-alert-test]').forEach(button => {
+    button.addEventListener('click', async event => {
+      const key = event.currentTarget.dataset.alertTest;
+      const label = REMOTE_NOTIFICATION_OPTIONS.find(option => option.key === key)?.label || key;
+      await testRemoteAlert(event.currentTarget, key, label);
+    });
   });
   document.getElementById('btn-enable-remote-control')?.addEventListener('click', () => {
     try {
@@ -362,6 +355,23 @@ function bindEvents() {
     });
   });
 
+}
+
+async function testRemoteAlert(button, notificationKey, label) {
+  button.disabled = true;
+  setRemoteFeedback(`Test firing ${label}…`);
+  try {
+    const result = await sendRemoteTestAlert(readRemoteAlertForm(), notificationKey);
+    const delivery = result.event?.notification_status || 'accepted';
+    const channels = result.deliveries ? ` ntfy: ${result.deliveries.ntfy}; Slack: ${result.deliveries.slack}.` : '';
+    const relayError = result.event?.notification_error ? ` Relay error: ${result.event.notification_error}.` : '';
+    const fallback = result.directFallback ? ' Browser fallback delivered directly to ntfy.' : '';
+    setRemoteFeedback(`${label} test ${delivery}.${channels}${relayError}${fallback}`, delivery === 'failed' ? 'danger' : 'success');
+  } catch (error) {
+    setRemoteFeedback(`${label} test failed: ${error.message}`, 'danger');
+  } finally {
+    button.disabled = false;
+  }
 }
 
 function syncWeirOverflowToggle() {

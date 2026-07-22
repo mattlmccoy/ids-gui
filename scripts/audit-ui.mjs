@@ -63,6 +63,14 @@ for (const key of ['weirOverflow', 'supplyOverflow', 'firmwareAlarm', 'controlle
     throw new Error(`Missing remote notification selection: ${key}`);
   }
 }
+if ((settings.match(/data-alert-test=/g) || []).length !== 1 || !settings.includes('REMOTE_NOTIFICATION_OPTIONS.map')) {
+  throw new Error('Missing per-category remote alert test-fire controls');
+}
+for (const type of ['test_weir_ovf', 'test_supply_ovf', 'test_firmware_alarm', 'test_controller_disconnected', 'test_data_stale']) {
+  if (!read('js/notifications.js').includes(type) || !read('worker/src/index.js').includes(type)) {
+    throw new Error(`Missing safe test-only Worker event: ${type}`);
+  }
+}
 if (!charts.includes('state-track-checkbox')) throw new Error('Missing selectable state trend controls');
 for (const stateKey of ['VacuumPump_STATE', 'ManifoldValve1_STATE']) {
   if (!charts.includes(stateKey)) throw new Error(`Missing state trend trace: ${stateKey}`);

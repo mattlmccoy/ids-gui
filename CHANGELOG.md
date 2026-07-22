@@ -5,6 +5,9 @@ All notable changes to this project are documented in this file.
 ## 2026-07-22
 
 ### Added
+- Per-category test-fire buttons for Weir overflow, Supply overflow, firmware alarms,
+  controller disconnects, and stale telemetry. Test events use normal Slack/ntfy delivery
+  without changing live incident state or suppressing a subsequent real alert.
 - Safety-gated automated commissioning checks for Flush, Drain, Bypass, and an optional
   Run/vacuum-response sequence, with live readback evaluation and an operator stop control.
 - Unit coverage for command allowlisting, alarm gating, readback matching, shutdown command

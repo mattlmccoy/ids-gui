@@ -153,6 +153,22 @@ try {
   assert.equal(response.status, 200);
   assert.equal((await response.json()).event.acknowledged_by, 'Integration test');
 
+  const categoryTests = [
+    'test_weir_ovf', 'test_supply_ovf', 'test_firmware_alarm',
+    'test_controller_disconnected', 'test_data_stale'
+  ];
+  for (const type of categoryTests) {
+    response = await postEvent(type, `${runId}-${type}`);
+    result = await response.json();
+    assert.equal(response.status, 201);
+    assert.equal(result.event.phase, 'test');
+    assert.equal(result.event.notification_status, 'sent');
+    assert.equal(result.duplicate, false);
+  }
+  assert.equal(ntfyMessages.length, 12);
+  assert.equal(slackMessages.length, 12);
+  assert.match(slackMessages.at(-1).text, /TEST.*stale telemetry/i);
+
   response = await fetch(`${relayUrl}/health`, { headers: { Origin: 'https://evil.example' } });
   assert.equal(response.status, 403);
 

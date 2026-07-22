@@ -132,7 +132,8 @@ See `CHANGELOG.md` for full release notes.
 - Remote alerts are edge-triggered and cover Weir/Supply overflow, firmware alarms,
   unexpected controller disconnects, and stale telemetry, with recovery events and
   duplicate suppression. Each alert/recovery category can be enabled independently in
-  Settings; manual test notifications remain available for delivery checks.
+  Settings. Every category has a test-fire control that exercises Slack/ntfy delivery
+  without changing the Worker's real incident state; a general test is also available.
 - Commissioning provides a guided 36-check physical I/O audit plus a locally gated
   electronic runner for Flush, Drain, Bypass, and optional Run/vacuum response checks.
   The runner requires live alarm telemetry and explicit safety acknowledgements, verifies

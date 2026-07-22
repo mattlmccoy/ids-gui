@@ -31,6 +31,13 @@ const EVENT_SELECTION_KEY = {
   controller_disconnected: 'controllerConnection', controller_reconnected: 'controllerConnection',
   data_stale: 'staleData', data_recovered: 'staleData'
 };
+const REMOTE_TEST_EVENTS = {
+  weirOverflow: ['test_weir_ovf', '[TEST] Weir overflow alert delivery check. No machine condition was triggered.'],
+  supplyOverflow: ['test_supply_ovf', '[TEST] Supply overflow alert delivery check. No machine condition was triggered.'],
+  firmwareAlarm: ['test_firmware_alarm', '[TEST] Firmware alarm delivery check. No firmware alarm was triggered.'],
+  controllerConnection: ['test_controller_disconnected', '[TEST] Controller disconnect alert delivery check. USB remained connected.'],
+  staleData: ['test_data_stale', '[TEST] Stale telemetry alert delivery check. Telemetry was not interrupted.']
+};
 const TELEMETRY_KEYS = [
   'SystemID', 'SoftwareRev', 'AlarmStatus', 'ErrorCode_STATE',
   'Run_MODE', 'Purge_MODE', 'Flush_MODE', 'Drain_MODE', 'Bypass_MODE',
@@ -129,10 +136,12 @@ export function initNotifications() {
   }, { once: true });
 }
 
-export async function sendRemoteTestAlert(configOverride) {
+export async function sendRemoteTestAlert(configOverride, notificationKey = null) {
   const config = configOverride ? setRemoteAlertConfig(configOverride) : getRemoteAlertConfig();
   validateRemoteConfig(config, false);
-  return postRemoteEvent('test', 'Manual test sent from IDS alert settings.', config);
+  const definition = notificationKey ? REMOTE_TEST_EVENTS[notificationKey] : null;
+  if (notificationKey && !definition) throw new Error(`unknown notification test: ${notificationKey}`);
+  return postRemoteEvent(definition?.[0] || 'test', definition?.[1] || 'Manual test sent from IDS alert settings.', config);
 }
 
 async function onData(data) {
@@ -336,7 +345,7 @@ function showLocalWeirAlert(data) {
 }
 
 async function postRemoteEvent(type, message, config = getRemoteAlertConfig()) {
-  validateRemoteConfig(config, type !== 'test');
+  validateRemoteConfig(config, !isRemoteTestType(type));
   const body = {
     type,
     deviceId: config.deviceId,
@@ -387,6 +396,11 @@ async function publishDirectNtfy(type, body, config) {
     controller_reconnected: ['IDS controller reconnected', '3', 'white_check_mark,electric_plug'],
     data_stale: ['IDS data stream is stale', '4', 'warning,hourglass'],
     data_recovered: ['IDS data stream recovered', '3', 'white_check_mark,chart_with_upwards_trend'],
+    test_weir_ovf: ['TEST · IDS Weir OVF', '3', 'test_tube,droplet'],
+    test_supply_ovf: ['TEST · IDS Supply OVF', '3', 'test_tube,droplet'],
+    test_firmware_alarm: ['TEST · IDS firmware alarm', '3', 'test_tube,warning'],
+    test_controller_disconnected: ['TEST · IDS controller disconnect', '3', 'test_tube,electric_plug'],
+    test_data_stale: ['TEST · IDS stale telemetry', '3', 'test_tube,hourglass'],
     test: ['IDS test notification', '3', 'test_tube,white_check_mark']
   }[type];
   const location = body.systemId || body.deviceId;
@@ -401,6 +415,11 @@ async function publishDirectNtfy(type, body, config) {
     controller_reconnected: `The IDS controller reconnected to ${location}.`,
     data_stale: `No fresh IDS telemetry has been received from ${location}.`,
     data_recovered: `IDS telemetry resumed from ${location}.`,
+    test_weir_ovf: `[TEST] Weir overflow alert delivery check from ${location}. No machine condition was triggered.`,
+    test_supply_ovf: `[TEST] Supply overflow alert delivery check from ${location}. No machine condition was triggered.`,
+    test_firmware_alarm: `[TEST] Firmware alarm delivery check from ${location}. No firmware alarm was triggered.`,
+    test_controller_disconnected: `[TEST] Controller disconnect alert delivery check from ${location}. USB remained connected.`,
+    test_data_stale: `[TEST] Stale telemetry alert delivery check from ${location}. Telemetry was not interrupted.`,
     test: `Test alert received from ${location}. Direct ntfy fallback is working.`
   };
   // JSON publishing at the root keeps this a CORS "simple request" (no custom
@@ -447,7 +466,9 @@ function normalizeNotificationSelections(value) {
 }
 
 function isRemoteEventSelected(type, config) {
-  if (type === 'test') return true;
+  if (isRemoteTestType(type)) return true;
   const key = EVENT_SELECTION_KEY[type];
   return key ? config.notifications[key] !== false : true;
 }
+
+function isRemoteTestType(type) { return type === 'test' || type.startsWith('test_'); }

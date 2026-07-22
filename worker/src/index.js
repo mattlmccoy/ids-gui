@@ -39,6 +39,26 @@ const EVENT_DEFINITIONS = {
     alertKey: 'data_stale', phase: 'recovered', severity: 'info',
     title: 'IDS data stream recovered', tags: 'white_check_mark,chart_with_upwards_trend'
   },
+  test_weir_ovf: {
+    alertKey: 'test_weir_ovf', phase: 'test', severity: 'info',
+    title: 'TEST · IDS Weir OVF', tags: 'test_tube,droplet'
+  },
+  test_supply_ovf: {
+    alertKey: 'test_supply_ovf', phase: 'test', severity: 'info',
+    title: 'TEST · IDS Supply OVF', tags: 'test_tube,droplet'
+  },
+  test_firmware_alarm: {
+    alertKey: 'test_firmware_alarm', phase: 'test', severity: 'info',
+    title: 'TEST · IDS firmware alarm', tags: 'test_tube,warning'
+  },
+  test_controller_disconnected: {
+    alertKey: 'test_controller_connection', phase: 'test', severity: 'info',
+    title: 'TEST · IDS controller disconnect', tags: 'test_tube,electric_plug'
+  },
+  test_data_stale: {
+    alertKey: 'test_data_stale', phase: 'test', severity: 'info',
+    title: 'TEST · IDS stale telemetry', tags: 'test_tube,hourglass'
+  },
   test: {
     alertKey: 'test', phase: 'test', severity: 'info',
     title: 'IDS test notification', tags: 'test_tube,white_check_mark'
@@ -427,6 +447,11 @@ function defaultMessage(type, location) {
     controller_reconnected: `The IDS controller reconnected to ${location}.`,
     data_stale: `No fresh IDS telemetry has been received from ${location}.`,
     data_recovered: `IDS telemetry resumed from ${location}.`,
+    test_weir_ovf: `[TEST] Weir overflow alert delivery check from ${location}. No machine condition was triggered.`,
+    test_supply_ovf: `[TEST] Supply overflow alert delivery check from ${location}. No machine condition was triggered.`,
+    test_firmware_alarm: `[TEST] Firmware alarm delivery check from ${location}. No firmware alarm was triggered.`,
+    test_controller_disconnected: `[TEST] Controller disconnect alert delivery check from ${location}. USB remained connected.`,
+    test_data_stale: `[TEST] Stale telemetry alert delivery check from ${location}. Telemetry was not interrupted.`,
     test: `Test alert received from ${location}. Cloudflare Worker and ntfy delivery are working.`
   };
   return messages[type];
