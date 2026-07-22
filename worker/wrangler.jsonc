@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ids-alert-relay",
+  "main": "src/index.js",
+  "compatibility_date": "2026-07-22",
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "ALLOWED_ORIGINS": "https://mattlmccoy.github.io,http://127.0.0.1:4173,http://localhost:4173,null",
+    "DASHBOARD_URL": "https://mattlmccoy.github.io/ids-gui/remote.html",
+    "NTFY_BASE_URL": "https://ntfy.sh"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "ids-alerts",
+      "database_id": "0d26608c-568d-4563-973a-0f5ead13aa1f",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

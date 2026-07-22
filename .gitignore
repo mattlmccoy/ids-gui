@@ -1,4 +1,6 @@
 node_modules/
+worker/.dev.vars
+.wrangler/
 dist/
 build/
 _site/
