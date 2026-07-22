@@ -543,6 +543,32 @@ html, body {
 #panel-ink .form-label {
   color: var(--text-secondary);
 }
+.chart-container-floats {
+  height: 340px;
+}
+.float-status-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 0.5rem;
+}
+.float-status-chip {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 0.2rem 0.5rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+}
+.float-status-chip strong {
+  grid-column: 2;
+  color: var(--text-primary);
+  font-family: 'SF Mono', 'Consolas', monospace;
+  font-size: 0.72rem;
+}
 #ink-reminder-banner {
   border-color: rgba(251,191,36,0.5);
 }

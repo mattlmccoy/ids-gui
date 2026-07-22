@@ -12,12 +12,14 @@ import { initChartsTab } from './ui-charts.js';
 import { initLogTab } from './ui-log.js';
 import { initInkTab } from './ui-ink.js';
 import { initCSVExport, exportSessionCSV } from './csv-export.js';
+import { initNotifications } from './notifications.js';
 
 /* ---------- Boot ---------- */
 
 function boot() {
   initThemeToggle();
   initSerialPicker();
+  loadDeploymentInfo();
 
   // Check Web Serial support
   if (!isSerialSupported()) {
@@ -40,6 +42,7 @@ function boot() {
   initLogTab();
   initInkTab();
   initCSVExport();
+  initNotifications();
 
   // Wire up connection badge
   store.on('connection', updateConnectionBadge);
@@ -62,6 +65,22 @@ function boot() {
   addCSVExportButton();
 
   store.log('info', 'IDS GUI R18 initialized');
+}
+
+async function loadDeploymentInfo() {
+  try {
+    const response = await fetch('./build-info.json', { cache: 'no-store' });
+    if (!response.ok) return;
+    const info = await response.json();
+    if (info.channel !== 'github-pages' || !info.commit) return;
+    const badge = document.getElementById('deployment-badge');
+    if (!badge) return;
+    badge.textContent = `WEB ${String(info.commit).slice(0, 7)}`;
+    badge.title = `GitHub Pages build ${info.commit}\nDeployed ${info.builtAt || ''}`;
+    badge.classList.remove('d-none');
+  } catch (_) {
+    // Electron and ad-hoc local servers do not include build-info.json.
+  }
 }
 
 // Boot immediately if DOM is already ready (module loaded after DOMContentLoaded)

@@ -1,0 +1,65 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const jsDir = path.join(root, 'js');
+const jsFiles = fs.readdirSync(jsDir)
+  .filter(name => name.endsWith('.js'))
+  .map(name => path.join(jsDir, name));
+
+for (const file of [...jsFiles, path.join(root, 'main.js'), path.join(root, 'preload.js')]) {
+  const checked = spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' });
+  if (checked.status !== 0) throw new Error(`Syntax check failed for ${file}\n${checked.stderr}`);
+}
+
+const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
+const serial = read('js/serial.js');
+const operation = read('js/ui-operation.js');
+const monitor = read('js/ui-monitor.js');
+const settings = read('js/ui-settings.js');
+const charts = read('js/ui-charts.js');
+const pagesWorkflow = read('.github/workflows/deploy-pages.yml');
+const pagesBuilder = read('scripts/build-pages.mjs');
+
+const expectedCommands = [
+  '{"GET":"ALL"}',
+  '{"Run_MODE":"1"}',
+  '{"Run_MODE":"0"}',
+  '{"WatchdogTrigger_MODE":"1"}',
+  '{"Purge_MODE":"1"}',
+  '{"Purge_MODE":"0"}',
+  '{"Flush_MODE":"1"}',
+  '{"Flush_MODE":"0"}',
+  '{"Drain_MODE":"1"}',
+  '{"Drain_MODE":"0"}',
+  '{"Bypass_MODE":"1"}',
+  '{"Bypass_MODE":"0"}'
+];
+const commandSource = serial + operation;
+for (const command of expectedCommands) {
+  if (!commandSource.includes(command)) throw new Error(`Missing firmware command: ${command}`);
+}
+
+for (const stateKey of [
+  'flushPump_STATE',
+  'BypassValve_STATE',
+  'ManifoldValve2_STATE',
+  'WeirOverflowFloat_STATE'
+]) {
+  if (!(operation + monitor + charts).includes(stateKey)) {
+    throw new Error(`Known firmware state is not represented in the UI: ${stateKey}`);
+  }
+}
+
+if (!settings.includes('toggle-weir-ovf-invert')) throw new Error('Missing Weir OVF inversion control');
+if (!charts.includes('toggle-float-tracks')) throw new Error('Missing float trend control');
+if (!charts.includes("shown.bs.tab")) throw new Error('Trending charts do not resize when shown');
+if (!pagesWorkflow.includes('actions/deploy-pages@v4')) throw new Error('Missing GitHub Pages deployment action');
+if (!pagesWorkflow.includes('npm run build:pages')) throw new Error('Pages workflow does not build a clean artifact');
+for (const entry of ['index.html', 'css', 'js', 'vendor']) {
+  if (!pagesBuilder.includes(`'${entry}'`)) throw new Error(`Pages builder is missing ${entry}`);
+}
+
+console.log(`UI audit passed: ${jsFiles.length + 2} scripts parsed, ${expectedCommands.length} commands verified.`);

@@ -53,6 +53,17 @@ Notes:
 - Web Serial requires Chrome or Edge.
 - If you open `index.html` directly, modules may not load.
 
+## Hosted Web App (GitHub Pages)
+
+The repository includes an automated GitHub Pages deployment. Once Pages is enabled with
+**GitHub Actions** as its source, the app is available at:
+
+<https://mattlmccoy.github.io/ids-gui/>
+
+Pushes to `main` automatically test and deploy the latest browser assets. No local companion
+is required: desktop Chrome or Edge connects directly to the USB controller through Web Serial.
+See `GITHUB_PAGES.md` for setup, update, browser-storage, and troubleshooting details.
+
 ## Build Installers (macOS / Windows / Linux)
 
 ```bash
@@ -73,7 +84,7 @@ The app now includes a dedicated **Ink Check** tab for IPA-based ink concentrati
   - Bottle state (`brand new` / `opened`)
   - Ink family (for example `IPA 25 wt%`)
   - Nominal wt% at sample
-  - Known sample volume (uL)
+- Known sample volume (mL)
   - Sample mass (g)
   - Current bottle volume (mL)
   - Notes and baseline flag
@@ -114,6 +125,9 @@ See `CHANGELOG.md` for full release notes.
 
 - Web Serial support is required. The Electron build enables Serial feature flags.
 - Vendor assets (Bootstrap, Chart.js, etc.) are copied locally via `npm run copy-vendor`.
+- The latest software/protocol review is documented in `SYSTEM_AUDIT.md`.
+- Trending includes live float status plus an optional separated float-state history chart.
+- Settings includes persisted Weir OVF display inversion and opt-in local overflow notifications.
 
 ## Troubleshooting
 

@@ -30,11 +30,11 @@ app.commandLine.appendSwitch('enable-features', 'Serial');
 
 app.whenReady().then(() => {
   session.defaultSession.setPermissionRequestHandler((_, permission, callback) => {
-    if (permission === 'serial') return callback(true);
+    if (permission === 'serial' || permission === 'notifications') return callback(true);
     callback(false);
   });
   session.defaultSession.setPermissionCheckHandler((_, permission) => {
-    return permission === 'serial';
+    return permission === 'serial' || permission === 'notifications';
   });
   session.defaultSession.setDevicePermissionHandler(details => {
     if (details.deviceType === 'serial') return true;

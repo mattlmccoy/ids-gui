@@ -4,6 +4,11 @@ import store from './state.js';
 import { send } from './serial.js';
 import { flashSentButton } from './utils.js';
 import { loadNominalConfig } from './nominal-config.js';
+import { isWeirOverflowInverted, setWeirOverflowInverted } from './float-state.js';
+import {
+  areWeirOverflowNotificationsEnabled,
+  setWeirOverflowNotificationsEnabled
+} from './notifications.js';
 
 /* ---------- Settings Groups ---------- */
 const SETTINGS_GROUPS = [
@@ -59,6 +64,8 @@ export function initSettingsTab() {
   bindEvents();
   initNominalSettings();
   store.on('data', autoPopulate);
+  store.on('float-config', syncWeirOverflowToggle);
+  store.on('notification-config', syncNotificationToggle);
 }
 
 function buildHTML() {
@@ -116,6 +123,46 @@ function buildHTML() {
           </div>
         </div>
       </div>
+      <div class="col-xl-4 col-lg-6">
+        <div class="dash-card settings-group mb-3">
+          <div class="card-header">
+            <i class="bi bi-arrow-down-up me-1"></i> Weir OVF Display
+          </div>
+          <div class="card-body">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" role="switch"
+                     id="toggle-weir-ovf-invert">
+              <label class="form-check-label" for="toggle-weir-ovf-invert">
+                Invert Weir OVF status
+              </label>
+            </div>
+            <div class="small mt-2" style="color:var(--text-muted)">
+              Enabled gives the requested convention: float down = OFF, float up = ON.
+              This changes display and trends only; the firmware value remains unchanged.
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-xl-4 col-lg-6">
+        <div class="dash-card settings-group mb-3">
+          <div class="card-header">
+            <i class="bi bi-bell me-1"></i> Local Alerts
+          </div>
+          <div class="card-body">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" role="switch"
+                     id="toggle-weir-ovf-notifications">
+              <label class="form-check-label" for="toggle-weir-ovf-notifications">
+                Notify when Weir OVF turns ON
+              </label>
+            </div>
+            <div class="small mt-2" style="color:var(--text-muted)">
+              Shows a desktop notification while this app is open and connected.
+              Email delivery requires an external notification relay.
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="small mt-1" style="color:var(--text-muted)">
       <i class="bi bi-info-circle me-1"></i>
@@ -125,6 +172,17 @@ function buildHTML() {
 }
 
 function bindEvents() {
+  syncWeirOverflowToggle();
+  syncNotificationToggle();
+  document.getElementById('toggle-weir-ovf-invert')?.addEventListener('change', e => {
+    setWeirOverflowInverted(e.target.checked);
+  });
+  document.getElementById('toggle-weir-ovf-notifications')?.addEventListener('change', async e => {
+    e.target.disabled = true;
+    const enabled = await setWeirOverflowNotificationsEnabled(e.target.checked);
+    e.target.checked = enabled;
+    e.target.disabled = false;
+  });
   document.getElementById('btn-weir-normal')?.addEventListener('click', () => {
     send('{"WeirFloatInvert_SETUP":"1"}');
     store.log('command', 'WeirFloatInvert_SETUP = 1');
@@ -140,6 +198,11 @@ function bindEvents() {
       const input = document.getElementById(`set-${key}`);
       const val = input.value.trim();
       if (val === '') return;
+      if (!input.checkValidity()) {
+        input.reportValidity();
+        store.log('warning', `Rejected out-of-range value for ${key}: ${val}`);
+        return;
+      }
       pushHistory(settingsHistory, key, val);
       refreshSettingChips(key);
       send(`{"${key}":"${val}"}`);
@@ -162,6 +225,16 @@ function bindEvents() {
     });
   });
 
+}
+
+function syncWeirOverflowToggle() {
+  const toggle = document.getElementById('toggle-weir-ovf-invert');
+  if (toggle) toggle.checked = isWeirOverflowInverted();
+}
+
+function syncNotificationToggle() {
+  const toggle = document.getElementById('toggle-weir-ovf-notifications');
+  if (toggle) toggle.checked = areWeirOverflowNotificationsEnabled();
 }
 
 function autoPopulate(data) {
