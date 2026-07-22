@@ -157,6 +157,9 @@ See `CHANGELOG.md` for full release notes.
   Settings, then infrequent Commissioning.
 - `HTC`, `HTC_ERROR`, and error bit `8192` are decoded as a heater thermocouple input fault;
   live Main/Aux readings identify the affected channel and explain the 999 °C fault sentinel.
+- Settings has persistent **Main heater installed** and **AUX heater installed** switches. For
+  an AUX-only machine, turn off Main. This filters the unused channel and a clearly attributable
+  HTC input fault in the web app; it does not electrically disable a heater or change firmware.
 
 ## Troubleshooting
 

@@ -13,6 +13,7 @@ import {
   sendRemoteTestAlert
 } from './notifications.js';
 import { enableRemoteControl, disableRemoteControl, getRemoteControlState } from './remote-control.js';
+import { getHeaterVisibility, setHeaterVisibility } from './heater-visibility.js';
 
 /* ---------- Settings Groups ---------- */
 const SETTINGS_GROUPS = [
@@ -79,6 +80,7 @@ export function initSettingsTab() {
   store.on('float-config', syncWeirOverflowToggle);
   store.on('notification-config', syncNotificationToggle);
   store.on('remote-control', syncRemoteControlStatus);
+  store.on('heater-visibility', syncHeaterChannelSettings);
 }
 
 function buildHTML() {
@@ -172,6 +174,29 @@ function buildHTML() {
             <div class="small mt-2" style="color:var(--text-muted)">
               Shows a desktop notification while this app is open and connected.
               Email delivery requires an external notification relay.
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-xl-4 col-lg-6">
+        <div class="dash-card settings-group mb-3">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-fire me-1"></i> Installed Heater Channels</span>
+            <span class="badge text-bg-secondary" id="heater-channel-count">2 installed</span>
+          </div>
+          <div class="card-body">
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input heater-channel-toggle" type="checkbox" role="switch"
+                     id="toggle-main-heater-installed" data-heater="MainHeater">
+              <label class="form-check-label" for="toggle-main-heater-installed">Main heater installed</label>
+            </div>
+            <div class="form-check form-switch">
+              <input class="form-check-input heater-channel-toggle" type="checkbox" role="switch"
+                     id="toggle-aux-heater-installed" data-heater="AuxHeater">
+              <label class="form-check-label" for="toggle-aux-heater-installed">AUX heater installed</label>
+            </div>
+            <div class="alert alert-warning small mt-3 mb-0 py-2">
+              Mark an unplugged input as not installed to hide its readbacks and trends. An HTC alert is ignored only when live telemetry identifies that unused input as the source. This does not disable heater power or firmware control.
             </div>
           </div>
         </div>
@@ -279,6 +304,7 @@ function bindEvents() {
   syncNotificationToggle();
   syncRemoteAlertForm();
   syncRemoteControlStatus(getRemoteControlState());
+  syncHeaterChannelSettings();
   document.getElementById('toggle-weir-ovf-invert')?.addEventListener('change', e => {
     setWeirOverflowInverted(e.target.checked);
   });
@@ -287,6 +313,14 @@ function bindEvents() {
     const enabled = await setWeirOverflowNotificationsEnabled(e.target.checked);
     e.target.checked = enabled;
     e.target.disabled = false;
+  });
+  document.querySelectorAll('.heater-channel-toggle').forEach(toggle => {
+    toggle.addEventListener('change', event => {
+      const heaterName = event.currentTarget.dataset.heater;
+      setHeaterVisibility(heaterName, event.currentTarget.checked);
+      syncHeaterChannelSettings();
+      store.log('info', `${heaterName === 'AuxHeater' ? 'AUX' : 'Main'} heater marked ${event.currentTarget.checked ? 'installed' : 'not installed'} in this browser`);
+    });
   });
   document.getElementById('btn-weir-normal')?.addEventListener('click', () => {
     send('{"WeirFloatInvert_SETUP":"1"}');
@@ -382,6 +416,24 @@ function syncWeirOverflowToggle() {
 function syncNotificationToggle() {
   const toggle = document.getElementById('toggle-weir-ovf-notifications');
   if (toggle) toggle.checked = areWeirOverflowNotificationsEnabled();
+}
+
+function syncHeaterChannelSettings() {
+  const visibility = getHeaterVisibility();
+  const fields = {
+    'toggle-main-heater-installed': visibility.MainHeater,
+    'toggle-aux-heater-installed': visibility.AuxHeater
+  };
+  for (const [id, installed] of Object.entries(fields)) {
+    const toggle = document.getElementById(id);
+    if (toggle) toggle.checked = !!installed;
+  }
+  const installedCount = Object.values(visibility).filter(Boolean).length;
+  const badge = document.getElementById('heater-channel-count');
+  if (badge) {
+    badge.textContent = `${installedCount} installed`;
+    badge.className = `badge ${installedCount ? 'text-bg-secondary' : 'text-bg-warning'}`;
+  }
 }
 
 function syncRemoteAlertForm() {

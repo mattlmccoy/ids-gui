@@ -1,5 +1,8 @@
 import store from './state.js';
 
+const STORAGE_KEY = 'ids-heater-channels-v1';
+let hydrated = false;
+
 export const HEATER_KEYS = {
   MainHeater: {
     tempKey: 'MainHeaterTemperature_STATE',
@@ -22,11 +25,14 @@ const SUPPRESSIBLE_HEATER_ERRORS = new Set([
 ]);
 
 export function getHeaterVisibility() {
+  hydrateHeaterVisibility();
   return store.getHeaterVisibility();
 }
 
 export function setHeaterVisibility(heaterName, visible) {
+  hydrateHeaterVisibility();
   store.setHeaterVisibility(heaterName, visible);
+  persistHeaterVisibility();
 }
 
 export function isHeaterVisible(heaterName) {
@@ -102,4 +108,27 @@ function isHeaterTempClearlyFaulted(temp) {
   if (!Number.isFinite(temp)) return false;
   // 999C-like values and obviously impossible ranges from broken sensors.
   return temp >= 250 || temp <= -40;
+}
+
+function hydrateHeaterVisibility() {
+  if (hydrated) return;
+  hydrated = true;
+  try {
+    const saved = JSON.parse(globalThis.localStorage?.getItem(STORAGE_KEY) || 'null');
+    for (const heaterName of Object.keys(HEATER_KEYS)) {
+      if (typeof saved?.[heaterName] === 'boolean') {
+        store.setHeaterVisibility(heaterName, saved[heaterName]);
+      }
+    }
+  } catch (error) {
+    console.warn('[heater-profile] Could not load saved heater channels:', error);
+  }
+}
+
+function persistHeaterVisibility() {
+  try {
+    globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify(store.getHeaterVisibility()));
+  } catch (error) {
+    console.warn('[heater-profile] Could not save heater channels:', error);
+  }
 }

@@ -282,7 +282,7 @@ function buildHTML() {
               <div class="indicator-row heater-row" id="heater-row-${h.name}">
                 <span class="state-dot off" id="ind-${h.key}"></span>
                 <span class="ind-label">${h.label}</span>
-                <button class="btn-control btn-disconnect btn-heater-toggle" id="btn-heater-toggle-${h.name}" data-heater="${h.name}" style="padding:0.2rem 0.5rem;font-size:0.7rem">Hide</button>
+                <button class="btn-control btn-disconnect btn-heater-toggle" id="btn-heater-toggle-${h.name}" data-heater="${h.name}" style="padding:0.2rem 0.5rem;font-size:0.7rem">Mark unused</button>
               </div>
             `).join('')}
           </div>
@@ -920,7 +920,7 @@ function applyHeaterVisibilityUI() {
     const kpiTile = document.getElementById(`kpi-tile-${h.name === 'MainHeater' ? 'main-heater' : 'aux-heater'}`);
     if (row) row.classList.toggle('heater-row-hidden', !visible);
     if (btn) {
-      btn.textContent = visible ? 'Hide' : 'Show';
+      btn.textContent = visible ? 'Mark unused' : 'Mark installed';
       btn.classList.toggle('btn-connect', !visible);
       btn.classList.toggle('btn-disconnect', visible);
     }

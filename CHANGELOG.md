@@ -5,6 +5,9 @@ All notable changes to this project are documented in this file.
 ## 2026-07-22
 
 ### Added
+- Persistent Settings toggles for Main and AUX heater installation. Marking an unplugged
+  channel unused hides its readbacks/trends and suppresses a generic HTC fault only when
+  live temperature telemetry clearly identifies that channel as the source.
 - Integrated commissioning automation directly into the step-by-step test wizard. Circuit
   tests now show animated phase progress, live readback plots, safety interlocks, automatic
   electronic analysis, and linked physical-confirmation results; alert delivery tests now
