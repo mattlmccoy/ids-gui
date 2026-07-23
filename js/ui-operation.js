@@ -108,7 +108,7 @@ function buildHTML() {
         <span class="kpi-label">Fluid Temp</span>
         <span class="kpi-value" id="kpi-fluid-temp" style="color:var(--accent-blue)">--</span>
         <span class="kpi-unit">\u00B0C</span>
-        ${tachometerHTML('fluid', 'Measured', '0–70 °C')}
+        ${tachometerHTML('fluid', 'Measured', '0 to 70 °C', 'var(--accent-blue)')}
       </div>
       <div class="kpi-tile" id="kpi-tile-main-heater">
         <span class="kpi-label">Main Heater</span>
@@ -119,14 +119,14 @@ function buildHTML() {
         <span class="kpi-label">Aux Heater</span>
         <span class="kpi-value" id="kpi-aux-heater" style="color:var(--accent-amber)">--</span>
         <span class="kpi-unit">\u00B0C</span>
-        ${tachometerHTML('aux', 'Measured', '0 to 100 \u00B0C')}
+        ${tachometerHTML('aux', 'Measured', '0 to 100 \u00B0C', 'var(--accent-amber)')}
       </div>
       <div class="kpi-tile" id="kpi-tile-vacuum">
         <span class="kpi-label">Vacuum</span>
         <span class="kpi-value" id="kpi-vacuum" style="color:var(--accent-cyan)">--</span>
         <span class="kpi-unit">cmH\u2082O</span>
         <span class="kpi-unit" id="kpi-vacuum-target-map">SP: --</span>
-        ${tachometerHTML('vacuum', 'Measured', '0 to -70 cmH₂O')}
+        ${tachometerHTML('vacuum', 'Measured', '0 to -70 cmH₂O', 'var(--accent-cyan)')}
       </div>
       <div class="kpi-tile" id="kpi-tile-pressure">
         <span class="kpi-label">Pressure</span>
@@ -358,8 +358,8 @@ function buildHTML() {
   `;
 }
 
-function tachometerHTML(id, kind, range) {
-  return `<div class="mini-tach" id="tach-${id}" role="meter" aria-label="${kind} ${id}" aria-valuemin="0" aria-valuemax="100">
+function tachometerHTML(id, kind, range, color = 'var(--accent-cyan)') {
+  return `<div class="mini-tach" id="tach-${id}" style="--tach-color:${color}" role="meter" aria-label="${kind} ${id}" aria-valuemin="0" aria-valuemax="100">
     <svg viewBox="0 0 100 55" aria-hidden="true">
       <path class="mini-tach-track" pathLength="100" d="M10 49 A40 40 0 0 1 90 49"></path>
       <path class="mini-tach-fill" pathLength="100" d="M10 49 A40 40 0 0 1 90 49"></path>
