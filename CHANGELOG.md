@@ -5,6 +5,14 @@ All notable changes to this project are documented in this file.
 ## 2026-07-22
 
 ### Added
+- Firmware-backed operating-mode guide with verified R17 output maps, prominent uncertainty
+  warnings for unverified plumbing, live readback highlighting, and a persistent Bypass alert.
+- A controlled **All Modes Off** command that requests Run, Purge, Flush, Drain, and Bypass
+  OFF and reports whether each command is acknowledged by controller telemetry.
+- Compact clock badges for Run startup/wind-down, Flush, reboot, commissioning waits/dwells,
+  and the 30-minute remote-control safety latch.
+- Secret-free diagnostic bundle export with recent raw telemetry, command/connection history,
+  UI/firmware context, and basic anomaly findings.
 - Persistent Settings toggles for Main and AUX heater installation. Marking an unplugged
   channel unused hides its readbacks/trends and suppresses a generic HTC fault only when
   live temperature telemetry clearly identifies that channel as the source.
@@ -21,6 +29,16 @@ All notable changes to this project are documented in this file.
   generation, test selection, and vacuum-response evaluation.
 
 ### Fixed
+- Mode buttons now distinguish requested commands from firmware-acknowledged state instead of
+  immediately presenting an optimistic local selection as live hardware state.
+- Purge, Flush, and Drain are mutually exclusive in the web UI; Bypass requires an explicit
+  persistent-mode confirmation.
+- Drain commissioning now verifies the actual compiled R17 outputs: drain pump plus both
+  manifold valves. It no longer incorrectly expects the separate drain valve to turn on.
+- Flush commissioning detects the known R17 timer-reset failure and returns an explicit
+  firmware defect instead of a vague timeout or an unsafe automatic retry.
+- Operator-facing `Flow_SETPOINT` labels now say **Recirculation Drive** because R17 uses the
+  value as pump drive and does not report measured flow.
 - GitHub Pages now assigns one deployment version to every nested JavaScript import and the
   main stylesheet, preventing a fresh entry point from loading stale Settings modules.
 - Commissioning now requires a known clear alarm status and stops on alarms, disconnects,

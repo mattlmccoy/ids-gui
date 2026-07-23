@@ -8,11 +8,16 @@ import { CONFIRMATIONS, confirm } from './ui-dialogs.js';
 import { getHeaterVisibility, setHeaterVisibility, isHeaterVisible, shouldSuppressHeaterError, describeHeaterFault } from './heater-visibility.js';
 import { loadNominalConfig } from './nominal-config.js';
 import { FLOATS, getFloatDisplayState, formatFloatState } from './float-state.js';
+import {
+  MODE_DEFINITIONS, MAINTENANCE_MODE_KEYS, activeMaintenanceMode,
+  allModesOffCommands, formatCountdown, modeReadbackMatches
+} from './mode-control.js';
+import { downloadDiagnosticBundle } from './diagnostics.js';
 
 /* ---------- Setpoint Definitions ---------- */
 const SETPOINTS = [
   { key: 'Vacuum_SETPOINT',    label: 'Vacuum',         min: 0, max: 100, step: 1, unit: '%' },
-  { key: 'Flow_SETPOINT',      label: 'Flow',           min: 0, max: 100, step: 1, unit: '%' },
+  { key: 'Flow_SETPOINT',      label: 'Recirc Drive',   min: 0, max: 100, step: 1, unit: '%' },
   { key: 'Temperature_SETPOINT', label: 'Fluid Temp',   min: 0, max: 70,  step: 1, unit: '\u00B0C' },
   { key: 'TemperatureMAX_SETPOINT', label: 'Max Heater', min: 20, max: 100, step: 1, unit: '\u00B0C' },
   { key: 'InputPumpSpeed_SETPOINT', label: 'Input Pump', min: 0, max: 100, step: 1, unit: '%' },
@@ -72,19 +77,12 @@ export function initOperationTab() {
   store.on('float-config', () => updateDisplay(store.data));
 }
 
-const modeCache = {
-  Purge_MODE: null,
-  Flush_MODE: null,
-  Drain_MODE: null,
-  Bypass_MODE: null
-};
-
-const MODE_TIP_TEXT = {
-  purge: 'Purge: clears/recirculates fluid in the line path while stopped. Use this to prep/clear lines before or after operation.',
-  flush: 'Flush: runs the cleaning path with flush hardware (flush pump/valve). Best used with the system stopped for maintenance cleaning.',
-  drain: 'Drain: routes fluid to waste and empties the system path using drain hardware. Use before service or shutdown cleanup.',
-  bypass: 'Bypass: directly opens the bypass valve path, independent of Purge/Flush/Drain toggles.'
-};
+const pendingModes = new Map();
+let countdownTimer = null;
+let countdownPurpose = '';
+let lastRunReadback = null;
+let lastFlushReadback = null;
+let dataSequence = 0;
 
 function buildHTML() {
   const quickSetpoints = SETPOINTS.filter(sp => QUICK_SETPOINT_KEYS.has(sp.key));
@@ -138,7 +136,7 @@ function buildHTML() {
         <div class="dash-card accent-blue mb-3">
           <div class="card-header d-flex align-items-center justify-content-between">
             <span><i class="bi bi-toggles me-1"></i> System Control</span>
-            <span class="op-badge op-badge-stop" id="op-status-badge">IDLE</span>
+            <div class="d-flex align-items-center gap-2"><span class="mini-countdown d-none" id="mode-countdown"><i class="bi bi-clock"></i><span>0:00</span></span><span class="op-badge op-badge-stop" id="op-status-badge">IDLE</span></div>
           </div>
           <div class="card-body">
             <div class="d-flex flex-wrap gap-2 mb-3">
@@ -153,7 +151,10 @@ function buildHTML() {
                 <i class="bi bi-play-fill me-1"></i>Run
               </button>
               <button class="btn-control btn-stop" id="btn-stop" disabled>
-                <i class="bi bi-stop-fill me-1"></i>Stop
+                <i class="bi bi-stop-fill me-1"></i>Stop Run
+              </button>
+              <button class="btn-control btn-all-off" id="btn-all-off" disabled>
+                <i class="bi bi-power me-1"></i>All Modes Off
               </button>
               <span style="width:1px;background:var(--border-color)"></span>
               <button class="btn-control btn-reboot" id="btn-reboot" disabled>
@@ -164,33 +165,42 @@ function buildHTML() {
               <div class="d-flex gap-1">
                 <button class="btn-control btn-mode-on" id="btn-purge-on" disabled>Purge ON</button>
                 <button class="btn-control btn-mode-off" id="btn-purge-off" disabled>OFF</button>
-                <button class="btn-control btn-disconnect mode-help-btn" type="button" data-mode-tip
-                        title="${MODE_TIP_TEXT.purge}"
-                        style="padding:0.3rem 0.45rem;font-size:0.72rem">?</button>
+                <span class="mode-ack" id="ack-Purge_MODE">READBACK —</span>
               </div>
               <div class="d-flex gap-1">
                 <button class="btn-control btn-mode-on" id="btn-flush-on" disabled>Flush ON</button>
                 <button class="btn-control btn-mode-off" id="btn-flush-off" disabled>OFF</button>
-                <button class="btn-control btn-disconnect mode-help-btn" type="button" data-mode-tip
-                        title="${MODE_TIP_TEXT.flush}"
-                        style="padding:0.3rem 0.45rem;font-size:0.72rem">?</button>
+                <span class="mode-ack" id="ack-Flush_MODE">READBACK —</span>
               </div>
               <div class="d-flex gap-1">
                 <button class="btn-control btn-mode-on" id="btn-drain-on" disabled>Drain ON</button>
                 <button class="btn-control btn-mode-off" id="btn-drain-off" disabled>OFF</button>
-                <button class="btn-control btn-disconnect mode-help-btn" type="button" data-mode-tip
-                        title="${MODE_TIP_TEXT.drain}"
-                        style="padding:0.3rem 0.45rem;font-size:0.72rem">?</button>
+                <span class="mode-ack" id="ack-Drain_MODE">READBACK —</span>
               </div>
               <span style="width:1px;background:var(--border-color)"></span>
               <div class="d-flex gap-1">
                 <button class="btn-control btn-mode-on" id="btn-bypass-on" disabled>Bypass</button>
                 <button class="btn-control btn-mode-off" id="btn-bypass-off" disabled>OFF</button>
-                <button class="btn-control btn-disconnect mode-help-btn" type="button" data-mode-tip
-                        title="${MODE_TIP_TEXT.bypass}"
-                        style="padding:0.3rem 0.45rem;font-size:0.72rem">?</button>
+                <span class="mode-ack" id="ack-Bypass_MODE">READBACK —</span>
               </div>
             </div>
+            <div class="mode-command-status mt-3" id="mode-command-status" role="status">Controller readback determines the displayed state.</div>
+            <div class="alert alert-warning py-2 mt-3 mb-0 d-none" id="bypass-active-warning"><strong>Bypass is active.</strong> It can remain open during Run and has no firmware timeout.</div>
+          </div>
+        </div>
+
+        <div class="dash-card accent-cyan mb-3">
+          <div class="card-header"><i class="bi bi-signpost-split me-1"></i> Operating mode guide <span class="badge text-bg-warning ms-1">R17</span></div>
+          <div class="card-body">
+            <p class="small text-muted mb-3">The output list below is verified from the compiled R17 firmware. Fluid destinations remain unverified until they are matched to the machine plumbing. A controller readback does not prove physical flow.</p>
+            <div class="mode-guide-grid">${Object.entries(MODE_DEFINITIONS).map(([key, item]) => `
+              <article class="mode-guide-card" id="guide-${key}">
+                <div class="d-flex justify-content-between align-items-center"><strong>${item.label}</strong><span class="mode-guide-live">OFF</span></div>
+                <p>${item.purpose}</p>
+                <div class="mode-output-flow">${item.outputs.map(output => `<span>${output}</span>`).join('<i class="bi bi-arrow-right"></i>')}</div>
+                <div class="small"><strong>Use:</strong> ${item.use}</div>
+                <div class="mode-guide-warning"><i class="bi bi-exclamation-triangle"></i>${item.warning}</div>
+              </article>`).join('')}</div>
           </div>
         </div>
 
@@ -260,6 +270,7 @@ function buildHTML() {
               <button class="btn-control btn-run" id="btn-config-save">Save Config</button>
               <button class="btn-control btn-disconnect" id="btn-config-send-all" disabled>Send All</button>
               <button class="btn-control btn-stop" id="btn-config-nominal">Load Nominal + Send</button>
+              <button class="btn-control btn-disconnect" id="btn-export-diagnostics"><i class="bi bi-download me-1"></i>Diagnostic Bundle</button>
             </div>
             <div class="small mt-2" style="color:var(--text-muted)">
               'Load' fills inputs. 'Send' or 'Send All' applies values to the controller. 'Save' exports current input values.
@@ -341,77 +352,47 @@ function bindEvents() {
   document.getElementById('btn-disconnect').addEventListener('click', () => serialDisconnect());
 
   document.getElementById('btn-run').addEventListener('click', async () => {
-    if (await CONFIRMATIONS.run()) { send('{"Run_MODE":"1"}'); store.log('command', 'Run mode enabled'); }
+    const maintenance = activeMaintenanceMode(store.data);
+    if (maintenance) {
+      setModeStatusMessage(`Run blocked: ${MODE_DEFINITIONS[maintenance].label} is active. Turn it OFF and wait for acknowledgement first.`);
+      return;
+    }
+    if (await CONFIRMATIONS.run()) requestMode('Run_MODE', 1, 'Run requested');
   });
   document.getElementById('btn-stop').addEventListener('click', async () => {
-    if (await CONFIRMATIONS.stop()) { send('{"Run_MODE":"0"}'); store.log('command', 'Run mode stopped'); }
+    if (await CONFIRMATIONS.stop()) requestMode('Run_MODE', 0, 'Run stop requested; maintenance modes are unchanged');
   });
+  document.getElementById('btn-all-off').addEventListener('click', commandAllModesOff);
   document.getElementById('btn-reboot').addEventListener('click', async () => {
-    if (await CONFIRMATIONS.reboot()) { send('{"WatchdogTrigger_MODE":"1"}'); store.log('command', 'Watchdog reboot triggered'); }
+    if (await CONFIRMATIONS.reboot()) {
+      if (await send('{"WatchdogTrigger_MODE":"1"}')) startCompactCountdown('Controller restart', 10, 'reboot');
+      store.log('command', 'Watchdog reboot triggered');
+    }
   });
 
   document.getElementById('btn-purge-on').addEventListener('click', async () => {
-    if (isRunModeActive()) {
-      setModeStatusMessage('Purge cannot be enabled while Run is active. Stop first (firmware auto-clears Purge_MODE in Run).');
-      return;
-    }
-    if (await CONFIRMATIONS.purgeOn()) {
-      modeCache.Purge_MODE = 1;
-      applyModeButtons('Purge_MODE');
-      send('{"Purge_MODE":"1"}');
-      store.log('command', 'Purge ON');
-    }
+    if (!maintenanceModeAllowed('Purge_MODE')) return;
+    if (await CONFIRMATIONS.purgeOn()) requestMode('Purge_MODE', 1, 'Purge requested');
   });
-  document.getElementById('btn-purge-off').addEventListener('click', () => {
-    modeCache.Purge_MODE = 0;
-    applyModeButtons('Purge_MODE');
-    send('{"Purge_MODE":"0"}'); store.log('command', 'Purge OFF');
-  });
+  document.getElementById('btn-purge-off').addEventListener('click', () => requestMode('Purge_MODE', 0, 'Purge stop requested'));
   document.getElementById('btn-flush-on').addEventListener('click', async () => {
-    if (isRunModeActive()) {
-      setModeStatusMessage('Flush cannot be enabled while Run is active. Stop first (firmware auto-clears Flush_MODE in Run).');
-      return;
-    }
-    if (await CONFIRMATIONS.flushOn()) {
-      modeCache.Flush_MODE = 1;
-      applyModeButtons('Flush_MODE');
-      send('{"Flush_MODE":"1"}');
-      store.log('command', 'Flush ON');
-    }
+    if (!maintenanceModeAllowed('Flush_MODE')) return;
+    if (await CONFIRMATIONS.flushOn()) requestMode('Flush_MODE', 1, 'Flush requested; watching for the known R17 timer defect');
   });
-  document.getElementById('btn-flush-off').addEventListener('click', () => {
-    modeCache.Flush_MODE = 0;
-    applyModeButtons('Flush_MODE');
-    send('{"Flush_MODE":"0"}'); store.log('command', 'Flush OFF');
-  });
+  document.getElementById('btn-flush-off').addEventListener('click', () => requestMode('Flush_MODE', 0, 'Flush stop requested'));
   document.getElementById('btn-drain-on').addEventListener('click', async () => {
-    if (isRunModeActive()) {
-      setModeStatusMessage('Drain cannot be enabled while Run is active. Stop first (firmware auto-clears Drain_MODE in Run).');
-      return;
-    }
-    if (await CONFIRMATIONS.drainOn()) {
-      modeCache.Drain_MODE = 1;
-      applyModeButtons('Drain_MODE');
-      send('{"Drain_MODE":"1"}');
-      store.log('command', 'Drain ON');
-    }
+    if (!maintenanceModeAllowed('Drain_MODE')) return;
+    if (await CONFIRMATIONS.drainOn()) requestMode('Drain_MODE', 1, 'Drain requested');
   });
-  document.getElementById('btn-drain-off').addEventListener('click', () => {
-    modeCache.Drain_MODE = 0;
-    applyModeButtons('Drain_MODE');
-    send('{"Drain_MODE":"0"}'); store.log('command', 'Drain OFF');
-  });
+  document.getElementById('btn-drain-off').addEventListener('click', () => requestMode('Drain_MODE', 0, 'Drain stop requested'));
 
-  document.getElementById('btn-bypass-on').addEventListener('click', () => {
-    modeCache.Bypass_MODE = 1;
-    applyModeButtons('Bypass_MODE');
-    send('{"Bypass_MODE":"1"}'); store.log('command', 'Bypass mode ON');
+  document.getElementById('btn-bypass-on').addEventListener('click', async () => {
+    const ok = await confirm('Open persistent bypass',
+      '<p><strong>R17 holds the bypass valve open until an explicit OFF command.</strong></p><p class="text-warning mb-0">It can coexist with Run and has no timeout. Confirm the physical bypass path and remain at the machine.</p>',
+      'Open bypass', 'btn-warning');
+    if (ok) requestMode('Bypass_MODE', 1, 'Persistent bypass requested');
   });
-  document.getElementById('btn-bypass-off').addEventListener('click', () => {
-    modeCache.Bypass_MODE = 0;
-    applyModeButtons('Bypass_MODE');
-    send('{"Bypass_MODE":"0"}'); store.log('command', 'Bypass mode OFF');
-  });
+  document.getElementById('btn-bypass-off').addEventListener('click', () => requestMode('Bypass_MODE', 0, 'Bypass close requested'));
 
   const sendAllBtn = document.getElementById('btn-config-send-all');
   if (sendAllBtn) {
@@ -497,6 +478,7 @@ function bindEvents() {
   document.getElementById('btn-config-nominal')?.addEventListener('click', async (e) => {
     await loadNominalIntoInputsAndSend(e.currentTarget);
   });
+  document.getElementById('btn-export-diagnostics')?.addEventListener('click', downloadDiagnosticBundle);
 
   document.querySelectorAll('.btn-heater-toggle').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -536,6 +518,7 @@ function bindEvents() {
 /* ---------- Display Updates ---------- */
 
 function updateDisplay(data) {
+  dataSequence += 1;
   // KPI tiles
   if (data.FluidTemperature_STATE !== undefined)
     document.getElementById('kpi-fluid-temp').textContent = parseFloat(data.FluidTemperature_STATE).toFixed(1);
@@ -598,6 +581,10 @@ function updateDisplay(data) {
   applyModeButtons('Flush_MODE', data);
   applyModeButtons('Drain_MODE', data);
   applyModeButtons('Bypass_MODE', data);
+  applyModeButtons('Run_MODE', data);
+  reconcilePendingModes(data);
+  updateModeGuide(data);
+  observeRunTimer(data);
   applyModeInterlocks(data);
   applyHeaterVisibilityUI();
 }
@@ -687,7 +674,7 @@ function updateConnectionUI(state) {
   document.getElementById('btn-disconnect').disabled = !connected;
 
   const btns = [
-    'btn-run', 'btn-stop', 'btn-reboot',
+    'btn-run', 'btn-stop', 'btn-all-off', 'btn-reboot',
     'btn-purge-on', 'btn-purge-off', 'btn-flush-on', 'btn-flush-off',
     'btn-drain-on', 'btn-drain-off',
     'btn-bypass-on', 'btn-bypass-off'
@@ -707,19 +694,26 @@ function isRunModeActive(data = null) {
 }
 
 function setModeStatusMessage(message) {
-  const statusEl = document.getElementById('config-status');
+  const statusEl = document.getElementById('mode-command-status');
   if (statusEl) statusEl.textContent = message;
 }
 
 function applyModeInterlocks(data = null) {
   const connected = store.connection === 'CONNECTED';
   const running = isRunModeActive(data);
-  const onButtonsToGate = ['btn-purge-on', 'btn-flush-on', 'btn-drain-on'];
-  onButtonsToGate.forEach(id => {
+  const source = data || store.data || {};
+  const active = activeMaintenanceMode(source);
+  const pendingMaintenance = MAINTENANCE_MODE_KEYS.find(key => pendingModes.has(key) && pendingModes.get(key).value === 1);
+  const buttonModes = { 'btn-purge-on': 'Purge_MODE', 'btn-flush-on': 'Flush_MODE', 'btn-drain-on': 'Drain_MODE' };
+  Object.entries(buttonModes).forEach(([id, key]) => {
     const btn = document.getElementById(id);
     if (!btn) return;
-    btn.disabled = !connected || running;
+    btn.disabled = !connected || running || Boolean(active && active !== key) || Boolean(pendingMaintenance && pendingMaintenance !== key) || pendingModes.has(key);
   });
+  const runButton = document.getElementById('btn-run');
+  if (runButton) runButton.disabled = !connected || Boolean(active) || Boolean(pendingMaintenance) || pendingModes.has('Run_MODE');
+  const stopButton = document.getElementById('btn-stop');
+  if (stopButton) stopButton.disabled = !connected || pendingModes.has('Run_MODE');
 }
 
 function applyModeButtons(modeKey, data = null) {
@@ -729,10 +723,10 @@ function applyModeButtons(modeKey, data = null) {
   const offBtn = document.getElementById(offId);
   if (!onBtn || !offBtn) return;
 
-  // Prefer live data, fallback to last user selection
-  let value = data && data[modeKey] !== undefined ? data[modeKey] : modeCache[modeKey];
-  if (value === null || value === undefined) return;
+  const value = data && data[modeKey] !== undefined ? data[modeKey] : store.data?.[modeKey];
+  if (value === undefined) return;
   const isOn = parseInt(value) === 1;
+  if (modeKey !== 'Run_MODE' && !pendingModes.has(modeKey)) updateAcknowledgement(modeKey, isOn ? 'ACK ON' : 'ACK OFF', 'ack');
 
   // Highlight the active selection (ON or OFF)
   if (isOn) {
@@ -746,6 +740,137 @@ function applyModeButtons(modeKey, data = null) {
     onBtn.classList.add('btn-mode-off');
     onBtn.classList.remove('btn-mode-on');
   }
+}
+
+function maintenanceModeAllowed(key) {
+  if (isRunModeActive()) {
+    setModeStatusMessage(`${MODE_DEFINITIONS[key].label} cannot start while Run is active. Use Stop Run and wait for the readback.`);
+    return false;
+  }
+  const active = activeMaintenanceMode(store.data, key);
+  if (active) {
+    setModeStatusMessage(`${MODE_DEFINITIONS[key].label} blocked: ${MODE_DEFINITIONS[active].label} is active. Turn it OFF and wait for its readback first.`);
+    return false;
+  }
+  const pending = MAINTENANCE_MODE_KEYS.find(modeKey => modeKey !== key && pendingModes.has(modeKey) && pendingModes.get(modeKey).value === 1);
+  if (pending) {
+    setModeStatusMessage(`${MODE_DEFINITIONS[key].label} blocked while ${MODE_DEFINITIONS[pending].label} is awaiting acknowledgement.`);
+    return false;
+  }
+  return true;
+}
+
+async function requestMode(key, value, message) {
+  if (pendingModes.has(key)) return false;
+  const ok = await send(JSON.stringify({ [key]: String(value) }));
+  if (!ok) {
+    setModeStatusMessage(`Could not send ${key}. Check the USB connection.`);
+    return false;
+  }
+  const pending = { value: Number(value), at: Date.now(), sequence: dataSequence };
+  pendingModes.set(key, pending);
+  setTimeout(() => {
+    if (pendingModes.get(key) === pending) reconcilePendingModes(store.data);
+  }, 8100);
+  setModeStatusMessage(`${message}. Waiting for controller acknowledgement…`);
+  store.log('command', message);
+  updateAcknowledgement(key, 'REQUESTED', 'pending');
+  applyModeInterlocks();
+  return true;
+}
+
+async function commandAllModesOff() {
+  const ok = await confirm('Command all modes OFF',
+    '<p><strong>This sends OFF for Run, Purge, Flush, Drain, and Bypass.</strong></p><p class="mb-0">Stay at the machine until every controller readback confirms OFF. This is a controlled shutdown command, not an emergency stop.</p>',
+    'Command all OFF', 'btn-danger');
+  if (!ok) return;
+  for (const command of allModesOffCommands()) {
+    const [key] = Object.keys(JSON.parse(command));
+    if (!await send(command)) {
+      setModeStatusMessage(`All Modes Off interrupted while sending ${key}. Verify the machine locally.`);
+      return;
+    }
+    const pending = { value: 0, at: Date.now(), sequence: dataSequence };
+    pendingModes.set(key, pending);
+    setTimeout(() => {
+      if (pendingModes.get(key) === pending) reconcilePendingModes(store.data);
+    }, 8100);
+    if (key !== 'Run_MODE') updateAcknowledgement(key, 'REQUESTED OFF', 'pending');
+  }
+  setModeStatusMessage('All Modes Off sent. Waiting for five controller readbacks…');
+  startCompactCountdown('All modes OFF verification', 8, 'all-off');
+  store.log('command', 'All operating modes commanded OFF');
+}
+
+function reconcilePendingModes(data) {
+  for (const [key, pending] of [...pendingModes]) {
+    if (dataSequence > pending.sequence && modeReadbackMatches(data, key, pending.value)) {
+      pendingModes.delete(key);
+      if (key !== 'Run_MODE') updateAcknowledgement(key, pending.value ? 'ACK ON' : 'ACK OFF', 'ack');
+      setModeStatusMessage(`${key.replace('_MODE', '')} controller readback acknowledged ${pending.value ? 'ON' : 'OFF'}.`);
+    } else if (Date.now() - pending.at > 8000) {
+      pendingModes.delete(key);
+      if (key !== 'Run_MODE') updateAcknowledgement(key, 'NO ACK', 'failed');
+      setModeStatusMessage(`${key.replace('_MODE', '')} was not acknowledged within 8 seconds. Verify locally.`);
+      store.log('warning', `${key} command was not acknowledged`);
+    }
+  }
+}
+
+function updateAcknowledgement(key, label, state) {
+  const el = document.getElementById(`ack-${key}`);
+  if (!el) return;
+  el.textContent = label;
+  el.className = `mode-ack ${state}`;
+}
+
+function updateModeGuide(data) {
+  for (const key of Object.keys(MODE_DEFINITIONS)) {
+    const card = document.getElementById(`guide-${key}`);
+    if (!card || data[key] === undefined) continue;
+    const active = Number(data[key]) === 1;
+    card.classList.toggle('active', active);
+    const live = card.querySelector('.mode-guide-live');
+    if (live) live.textContent = active ? 'LIVE ON' : 'OFF';
+  }
+  document.getElementById('bypass-active-warning')?.classList.toggle('d-none', Number(data.Bypass_MODE) !== 1);
+}
+
+function observeRunTimer(data) {
+  if (data.Run_MODE === undefined) return;
+  const current = Number(data.Run_MODE);
+  if (lastRunReadback !== null && current !== lastRunReadback) {
+    startCompactCountdown(current ? 'Run startup' : 'Run wind-down', current ? 15 : 14, 'run');
+  }
+  lastRunReadback = current;
+  if (data.Flush_MODE !== undefined) {
+    const flush = Number(data.Flush_MODE);
+    if (lastFlushReadback === 0 && flush === 1) startCompactCountdown('Flush cycle', 5, 'flush');
+    lastFlushReadback = flush;
+  }
+}
+
+function startCompactCountdown(label, seconds, purpose = '') {
+  stopCompactCountdown();
+  countdownPurpose = purpose;
+  const el = document.getElementById('mode-countdown');
+  if (!el) return;
+  const end = Date.now() + seconds * 1000;
+  const tick = () => {
+    const remaining = end - Date.now();
+    el.classList.remove('d-none');
+    el.title = label;
+    el.querySelector('span').textContent = `${label} ${formatCountdown(remaining)}`;
+    if (remaining <= 0) stopCompactCountdown();
+  };
+  tick(); countdownTimer = setInterval(tick, 250);
+}
+
+function stopCompactCountdown() {
+  if (countdownTimer) clearInterval(countdownTimer);
+  countdownTimer = null;
+  countdownPurpose = '';
+  document.getElementById('mode-countdown')?.classList.add('d-none');
 }
 
 function updateAlarmBanner(payload) {

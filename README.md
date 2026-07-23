@@ -126,6 +126,8 @@ See `CHANGELOG.md` for full release notes.
 - Web Serial support is required. The Electron build enables Serial feature flags.
 - Vendor assets (Bootstrap, Chart.js, etc.) are copied locally via `npm run copy-vendor`.
 - The latest software/protocol review is documented in `SYSTEM_AUDIT.md`.
+- The firmware-backed Run/Purge/Flush/Drain/Bypass analysis and lab verification checklist
+  are documented in `OPERATING_MODES_AUDIT.md`.
 - Trends uses the same explicit time bounds for pressure/vacuum and machine-state history.
   Individual float, pump, and valve lanes can be selected and stored as a browser preference.
 - Settings includes persisted Weir OVF display inversion and opt-in local overflow notifications.
@@ -141,6 +143,13 @@ See `CHANGELOG.md` for full release notes.
   acknowledgements, verify two consecutive readbacks, abort on alarms/disconnects, command
   all modes OFF at both boundaries, and complete linked mode/actuator checks together only
   after operator confirmation of physical behavior.
+- Operation now separates a requested mode from the controller acknowledgement, prevents
+  overlapping Purge/Flush/Drain requests, warns continuously for persistent Bypass, and
+  includes a verified controlled **All Modes Off** action. Compact clock badges show active
+  fixed-duration waits without blocking the page.
+- A one-click diagnostic bundle exports recent telemetry and command history without remote
+  alert secrets. `Flow_SETPOINT` is labeled **Recirculation Drive** because it is not measured
+  flow in R17.
 - The remote dashboard now includes allowlisted, read-only live system telemetry for phones.
 - Mobile control uses a separate operator token and an expiring Worker command queue. The
   desktop must be connected and locally enabled for 30 minutes; only Run, Stop, vacuum,

@@ -57,29 +57,30 @@ export const CONFIRMATIONS = {
     'btn-success'
   ),
   stop: () => confirm(
-    'Stop System',
-    '<p class="mb-0"><strong>This will stop the recirculation system.</strong></p>',
-    'Stop',
+    'Stop Run Mode',
+    '<p class="mb-1"><strong>This sends Run_MODE OFF and begins the R17 wind-down.</strong></p>' +
+    '<p class="text-warning mb-0">It does not turn Purge, Flush, Drain, or Bypass off. Use “All Modes Off” for a verified controlled shutdown.</p>',
+    'Stop Run',
     'btn-warning'
   ),
   purgeOn: () => confirm(
     'Enable Purge Mode',
-    '<p class="mb-1"><strong>This will activate purge mode.</strong></p>' +
-    '<p class="text-warning mb-0">Ensure waste container is in place and fluid lines are connected.</p>',
+    '<p class="mb-1"><strong>R17 pulses the recirculation pump; the input pump is conditional on the Weir OVF raw state.</strong></p>' +
+    '<p class="text-warning mb-0">The firmware does not independently open flush/drain hardware. Verify the actual hose route and waste destination.</p>',
     'Enable Purge',
     'btn-warning'
   ),
   flushOn: () => confirm(
     'Enable Flush Mode',
-    '<p class="mb-1"><strong>This will activate flush mode.</strong></p>' +
-    '<p class="text-warning mb-0">Ensure flush fluid supply is connected and waste container is ready.</p>',
+    '<p class="mb-1"><strong>This requests the flush pump and flush valve for five seconds.</strong></p>' +
+    '<p class="text-danger mb-0">Known R17 defect: the firmware timer is not reset for a new cycle, so the mode may clear immediately. The UI will report the readback and will not retry automatically.</p>',
     'Enable Flush',
     'btn-warning'
   ),
   drainOn: () => confirm(
     'Enable Drain Mode',
-    '<p class="mb-1"><strong>This will activate drain mode.</strong></p>' +
-    '<p class="text-warning mb-0">Ensure waste container is in place. System fluid will be drained.</p>',
+    '<p class="mb-1"><strong>R17 runs the drain pump and opens manifold valves 1 and 2.</strong></p>' +
+    '<p class="text-warning mb-0">It commands the separate drain valve OFF. Confirm the physical route and waste container before proceeding.</p>',
     'Enable Drain',
     'btn-warning'
   )

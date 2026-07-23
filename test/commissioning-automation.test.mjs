@@ -30,6 +30,6 @@ test('readback evaluators require complete evidence', () => {
 
 test('guided circuit definitions bind modes to the expected readbacks', () => {
   assert.deepEqual(CIRCUIT_TESTS.flush.outputs, ['flushPump_STATE', 'flushValve_STATE']);
-  assert.deepEqual(CIRCUIT_TESTS.drain.outputs, ['DrainPump_STATE', 'DrainValve_STATE']);
+  assert.deepEqual(CIRCUIT_TESTS.drain.outputs, ['DrainPump_STATE', 'ManifoldValve1_STATE', 'ManifoldValve2_STATE']);
   assert.deepEqual(CIRCUIT_TESTS.bypass.outputs, ['BypassValve_STATE']);
 });

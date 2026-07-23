@@ -14,6 +14,7 @@ import {
 } from './notifications.js';
 import { enableRemoteControl, disableRemoteControl, getRemoteControlState } from './remote-control.js';
 import { getHeaterVisibility, setHeaterVisibility } from './heater-visibility.js';
+import { formatCountdown } from './mode-control.js';
 
 /* ---------- Settings Groups ---------- */
 const SETTINGS_GROUPS = [
@@ -38,7 +39,7 @@ const SETTINGS_GROUPS = [
     id: 'pressure', title: 'Pressure / Vacuum', icon: 'bi-speedometer',
     params: [
       { key: 'Vacuum_SETPOINT', label: 'Vacuum Setpoint', min: 0, max: 100, step: 1, unit: '%' },
-      { key: 'Flow_SETPOINT', label: 'Flow Setpoint', min: 0, max: 100, step: 1, unit: '%' },
+      { key: 'Flow_SETPOINT', label: 'Recirculation Drive', min: 0, max: 100, step: 1, unit: '%' },
       { key: 'PressureMAX_SETPOINT', label: 'Max Pressure', min: 0, max: 100, step: 1, unit: 'psi' },
     ]
   },
@@ -81,6 +82,7 @@ export function initSettingsTab() {
   store.on('notification-config', syncNotificationToggle);
   store.on('remote-control', syncRemoteControlStatus);
   store.on('heater-visibility', syncHeaterChannelSettings);
+  setInterval(() => syncRemoteControlStatus(), 1000);
 }
 
 function buildHTML() {
@@ -501,7 +503,7 @@ function setRemoteFeedback(message, kind = '') {
 function syncRemoteControlStatus(status = getRemoteControlState()) {
   const element = document.getElementById('remote-control-status');
   if (!element) return;
-  element.textContent = status.active ? `Enabled until ${new Date(status.enabledUntil).toLocaleTimeString()}` : 'Disabled';
+  element.innerHTML = status.active ? `<i class="bi bi-clock me-1"></i>${formatCountdown(status.enabledUntil - Date.now())} remaining` : 'Disabled';
   element.className = `badge ${status.active ? 'text-bg-warning' : 'text-bg-secondary'}`;
 }
 

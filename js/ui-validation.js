@@ -8,6 +8,7 @@ import {
   CIRCUIT_TESTS, setpointCommand, vacuumResponse
 } from './commissioning-automation.js';
 import { sendRemoteTestAlert } from './notifications.js';
+import { formatCountdown } from './mode-control.js';
 
 const STORAGE_KEY = 'ids-lab-certification-v2';
 const OBSERVATION_SECONDS = 10;
@@ -62,8 +63,8 @@ const AUTOMATED_TESTS = {
   },
   'mode-Drain_MODE': {
     key: 'drain', label: 'Drain circuit', chartType: 'binary',
-    evidenceKeys: ['Drain_MODE', 'DrainPump_STATE', 'DrainValve_STATE'],
-    linkedIds: ['mode-Drain_MODE', 'actuator-DrainPump_STATE', 'actuator-DrainValve_STATE']
+    evidenceKeys: ['Drain_MODE', 'DrainPump_STATE', 'ManifoldValve1_STATE', 'ManifoldValve2_STATE'],
+    linkedIds: ['mode-Drain_MODE', 'actuator-DrainPump_STATE', 'actuator-ManifoldValve1_STATE', 'actuator-ManifoldValve2_STATE']
   },
   'mode-Bypass_MODE': {
     key: 'bypass', label: 'Bypass valve', chartType: 'binary',
@@ -352,7 +353,7 @@ function finishCertification() {
 function createAutomationState() {
   return {
     status: 'idle', abort: false, current: '', phase: 'idle', testId: null,
-    log: [], samples: [], resultMessage: '',
+    log: [], samples: [], resultMessage: '', deadlineAt: 0, countdownLabel: '',
     config: {
       vacuumSetpoint: 28, flowSetpoint: 50, minimumVacuumChange: 1, dwellSeconds: 4,
       plumbingReady: false, estopReady: false, fluidReady: false, permission: false
@@ -402,9 +403,10 @@ async function runCircuitTest(test, panel) {
   automationLog('info', `${test.label}: ON command sent.`);
   await sendRequired(modeCommand(test.mode, true));
   setAutomationPhase('observe', `Waiting for ${test.outputs.join(' + ')}`, panel);
-  await waitForReadback(data => binaryMatches(data, [test.mode, ...test.outputs], true), 10000, `${test.mode} and ${test.outputs.join(', ')} ON`);
+  if (test.mode === 'Flush_MODE') await waitForFlushCircuit(test);
+  else await waitForReadback(data => binaryMatches(data, [test.mode, ...test.outputs], true), 10000, `${test.mode} and ${test.outputs.join(', ')} ON`);
   automationLog('success', `${test.label}: ON readbacks confirmed.`);
-  await interruptibleDelay(automation.config.dwellSeconds * 1000);
+  await interruptibleDelay(automation.config.dwellSeconds * 1000, 'Dwell');
   setAutomationPhase('deactivate', `${test.label}: commanding OFF`, panel);
   await sendRequired(modeCommand(test.mode, false));
   await waitForReadback(data => binaryMatches(data, [test.mode, ...test.outputs], false), 10000, `${test.mode} and ${test.outputs.join(', ')} OFF`);
@@ -417,15 +419,15 @@ async function runVacuumTest(panel) {
   const baseline = Number(store.data.Vacuum_STATE);
   if (!Number.isFinite(baseline)) throw new Error('Vacuum response test cannot start: Vacuum_STATE is unavailable.');
   setAutomationPhase('activate', 'Applying Run setpoints', panel);
-  automationLog('info', `Applying raw setpoints: vacuum ${c.vacuumSetpoint}%, flow ${c.flowSetpoint}%.`);
+  automationLog('info', `Applying raw setpoints: vacuum ${c.vacuumSetpoint}%, recirculation drive ${c.flowSetpoint}%.`);
   try {
     await sendRequired(setpointCommand('Vacuum_SETPOINT', c.vacuumSetpoint));
     await sendRequired(setpointCommand('Flow_SETPOINT', c.flowSetpoint));
-    await waitForReadback(data => numericMatches(data.Vacuum_SETPOINT, c.vacuumSetpoint) && numericMatches(data.Flow_SETPOINT, c.flowSetpoint), 8000, 'vacuum and flow setpoint echoes');
+    await waitForReadback(data => numericMatches(data.Vacuum_SETPOINT, c.vacuumSetpoint) && numericMatches(data.Flow_SETPOINT, c.flowSetpoint), 8000, 'vacuum and recirculation-drive setpoint echoes');
     await sendRequired(modeCommand('Run_MODE', true));
     setAutomationPhase('observe', 'Measuring vacuum response', panel);
     await waitForReadback(data => binaryMatches(data, ['Run_MODE', 'VacuumPump_STATE'], true), 10000, 'Run mode and vacuum pump ON');
-    await interruptibleDelay(c.dwellSeconds * 1000);
+    await interruptibleDelay(c.dwellSeconds * 1000, 'Vacuum response');
     const result = vacuumResponse(baseline, store.data.Vacuum_STATE, c.minimumVacuumChange);
     if (!result.pass) throw new Error(`Vacuum response was ${formatNumber(result.delta)}; required at least ${c.minimumVacuumChange}.`);
     automationLog('success', `Vacuum changed by ${formatNumber(result.delta)} (minimum ${c.minimumVacuumChange}).`);
@@ -439,12 +441,32 @@ async function runVacuumTest(panel) {
 
 async function waitForReadback(predicate, timeoutMs, description) {
   const started = Date.now(); let consecutive = 0;
+  automation.deadlineAt = started + timeoutMs; automation.countdownLabel = 'Readback';
   while (Date.now() - started < timeoutMs) {
     assertAutomationSafe(); consecutive = predicate(store.data) ? consecutive + 1 : 0;
-    if (consecutive >= 2) return;
+    if (consecutive >= 2) { automation.deadlineAt = 0; return; }
     await interruptibleDelay(250);
   }
+  automation.deadlineAt = 0;
   throw new Error(`Timed out waiting for ${description}. Last readback was saved in the session report.`);
+}
+
+async function waitForFlushCircuit(test) {
+  const started = Date.now(); const initialSamples = automation.samples.length; let consecutive = 0;
+  automation.deadlineAt = started + 10000; automation.countdownLabel = 'Flush acknowledgement';
+  while (Date.now() - started < 10000) {
+    assertAutomationSafe();
+    consecutive = binaryMatches(store.data, [test.mode, ...test.outputs], true) ? consecutive + 1 : 0;
+    if (consecutive >= 2) { automation.deadlineAt = 0; return; }
+    const freshFrames = automation.samples.length - initialSamples;
+    if (freshFrames >= 3 && Number(store.data.Flush_MODE) === 0) {
+      automation.deadlineAt = 0;
+      throw new Error('R17 Flush cleared before its outputs could be confirmed. This matches the known firmware timer-reset defect; the web UI did not retry or force hardware. Patch and rebuild the controller firmware before certifying Flush.');
+    }
+    await interruptibleDelay(250);
+  }
+  automation.deadlineAt = 0;
+  throw new Error('Timed out waiting for the Flush mode, pump, and valve readbacks. The known R17 timer-reset defect may be present.');
 }
 
 function assertAutomationSafe() {
@@ -468,12 +490,17 @@ async function safeShutdown() {
   automationLog('info', 'Safe baseline requested: all operating modes OFF.');
 }
 
-function interruptibleDelay(ms) {
+function interruptibleDelay(ms, countdownLabel = '') {
   return new Promise((resolve, reject) => {
     const started = Date.now();
+    const managesCountdown = Boolean(countdownLabel);
+    if (managesCountdown) {
+      automation.deadlineAt = started + ms;
+      automation.countdownLabel = countdownLabel;
+    }
     const timer = setInterval(() => {
-      if (automation.abort) { clearInterval(timer); reject(new Error('Automation stopped by operator.')); }
-      else if (Date.now() - started >= ms) { clearInterval(timer); resolve(); }
+      if (automation.abort) { clearInterval(timer); if (managesCountdown) automation.deadlineAt = 0; reject(new Error('Automation stopped by operator.')); }
+      else if (Date.now() - started >= ms) { clearInterval(timer); if (managesCountdown) automation.deadlineAt = 0; resolve(); }
     }, 100);
   });
 }
@@ -485,7 +512,7 @@ function automationLog(level, message) {
 }
 
 function setAutomationPhase(phase, current, panel) {
-  automation.phase = phase; automation.current = current; render(panel);
+  automation.phase = phase; automation.current = current; automation.countdownLabel = phase === 'observe' ? 'Observe' : current; render(panel);
 }
 
 function confirmAutomationResult(panel) {
@@ -531,12 +558,12 @@ function renderIntegratedAutomation(test) {
   const alarmClear = alarmKnown && !hasActiveAlarm(store.data);
   const shownStatus = isThisTest ? automation.status : 'idle';
   return `<section class="commission-runner ${shownStatus}" aria-label="Integrated automated test">
-    <div class="d-flex justify-content-between align-items-center mb-3"><div><div class="small text-uppercase text-muted">Guided automation</div><div class="h5 mb-0">${escapeHtml(definition.label)}</div></div><span class="commission-status ${shownStatus}"><i class="bi ${shownStatus === 'complete' ? 'bi-check-circle-fill' : shownStatus === 'failed' ? 'bi-x-circle-fill' : shownStatus === 'running' ? 'bi-activity' : 'bi-cpu'}"></i>${escapeHtml(shownStatus)}</span></div>
+    <div class="d-flex justify-content-between align-items-center mb-3"><div><div class="small text-uppercase text-muted">Guided automation</div><div class="h5 mb-0">${escapeHtml(definition.label)}</div></div><div class="d-flex align-items-center gap-2">${running && automation.deadlineAt ? `<span class="mini-countdown"><i class="bi bi-clock"></i>${escapeHtml(automation.countdownLabel)} ${formatCountdown(automation.deadlineAt - Date.now())}</span>` : ''}<span class="commission-status ${shownStatus}"><i class="bi ${shownStatus === 'complete' ? 'bi-check-circle-fill' : shownStatus === 'failed' ? 'bi-x-circle-fill' : shownStatus === 'running' ? 'bi-activity' : 'bi-cpu'}"></i>${escapeHtml(shownStatus)}</span></div></div>
     ${renderPhaseRail(isThisTest ? automation.phase : 'idle')}
     <div class="row g-3 mt-1"><div class="col-lg-7">${renderEvidencePanel(test, definition)}</div>
       <div class="col-lg-5"><div class="commission-gate"><div class="fw-semibold mb-2">Operator safety gate</div>
         ${automationCheck('plumbingReady', 'Plumbing secured and drains safely routed.', c.plumbingReady, running)}${automationCheck('fluidReady', 'Correct fluid available; pumps will not run dry.', c.fluidReady, running)}${automationCheck('estopReady', 'I am at the machine with E-stop accessible.', c.estopReady, running)}${automationCheck('permission', 'I authorize this hardware test now.', c.permission, running)}
-        <div class="row g-2 mt-1"><div class="col-5"><label class="form-label small">Dwell (s)</label><input type="number" min="2" max="30" class="form-control form-control-sm" data-commissioning-option="dwellSeconds" value="${c.dwellSeconds}" ${running ? 'disabled' : ''}></div>${definition.key === 'vacuum' ? `<div class="col-7"><label class="form-label small">Min vacuum change</label><input type="number" min="0" max="500" step="0.1" class="form-control form-control-sm" data-commissioning-option="minimumVacuumChange" value="${c.minimumVacuumChange}" ${running ? 'disabled' : ''}></div><div class="col-6"><label class="form-label small">Vacuum (%)</label><input type="number" min="0" max="100" class="form-control form-control-sm" data-commissioning-option="vacuumSetpoint" value="${c.vacuumSetpoint}" ${running ? 'disabled' : ''}></div><div class="col-6"><label class="form-label small">Flow (%)</label><input type="number" min="0" max="100" class="form-control form-control-sm" data-commissioning-option="flowSetpoint" value="${c.flowSetpoint}" ${running ? 'disabled' : ''}></div>` : ''}</div>
+        <div class="row g-2 mt-1"><div class="col-5"><label class="form-label small">Dwell (s)</label><input type="number" min="2" max="30" class="form-control form-control-sm" data-commissioning-option="dwellSeconds" value="${c.dwellSeconds}" ${running ? 'disabled' : ''}></div>${definition.key === 'vacuum' ? `<div class="col-7"><label class="form-label small">Min vacuum change</label><input type="number" min="0" max="500" step="0.1" class="form-control form-control-sm" data-commissioning-option="minimumVacuumChange" value="${c.minimumVacuumChange}" ${running ? 'disabled' : ''}></div><div class="col-6"><label class="form-label small">Vacuum (%)</label><input type="number" min="0" max="100" class="form-control form-control-sm" data-commissioning-option="vacuumSetpoint" value="${c.vacuumSetpoint}" ${running ? 'disabled' : ''}></div><div class="col-6"><label class="form-label small">Recirc drive (%)</label><input type="number" min="0" max="100" class="form-control form-control-sm" data-commissioning-option="flowSetpoint" value="${c.flowSetpoint}" ${running ? 'disabled' : ''}></div>` : ''}</div>
         <div class="commission-interlocks mt-2"><span class="${connected ? 'ok' : 'bad'}">${connected ? 'Connected' : 'Disconnected'}</span><span class="${alarmClear ? 'ok' : 'bad'}">${!alarmKnown ? 'Awaiting alarm status' : alarmClear ? 'Alarm clear' : 'Alarm active'}</span></div>
         <div class="d-grid gap-2 mt-3">${isThisTest && shownStatus === 'complete' ? '<button class="btn btn-success commission-confirm" data-commissioning-action="confirm"><i class="bi bi-check2-circle me-1"></i>Confirm physical behavior & complete linked checks</button>' : `<button class="btn btn-warning" data-commissioning-action="run" ${automationReady(test) && !running ? '' : 'disabled'}><i class="bi bi-play-fill me-1"></i>Run this guided test</button>`}<button class="btn btn-outline-danger" data-commissioning-action="stop" ${running ? '' : 'disabled'}>Stop & command all OFF</button></div>
       </div></div></div>

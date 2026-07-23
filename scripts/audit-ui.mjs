@@ -22,6 +22,7 @@ const settings = read('js/ui-settings.js');
 const charts = read('js/ui-charts.js');
 const validation = read('js/ui-validation.js');
 const ink = read('js/ui-ink.js');
+const modeControl = read('js/mode-control.js');
 const pagesWorkflow = read('.github/workflows/deploy-pages.yml');
 const pagesBuilder = read('scripts/build-pages.mjs');
 const indexHtml = read('index.html');
@@ -29,22 +30,16 @@ const updatePage = read('update.html');
 
 const expectedCommands = [
   '{"GET":"ALL"}',
-  '{"Run_MODE":"1"}',
-  '{"Run_MODE":"0"}',
-  '{"WatchdogTrigger_MODE":"1"}',
-  '{"Purge_MODE":"1"}',
-  '{"Purge_MODE":"0"}',
-  '{"Flush_MODE":"1"}',
-  '{"Flush_MODE":"0"}',
-  '{"Drain_MODE":"1"}',
-  '{"Drain_MODE":"0"}',
-  '{"Bypass_MODE":"1"}',
-  '{"Bypass_MODE":"0"}'
+  '{"WatchdogTrigger_MODE":"1"}'
 ];
 const commandSource = serial + operation;
 for (const command of expectedCommands) {
   if (!commandSource.includes(command)) throw new Error(`Missing firmware command: ${command}`);
 }
+for (const key of ['Run_MODE', 'Purge_MODE', 'Flush_MODE', 'Drain_MODE', 'Bypass_MODE']) {
+  if (!modeControl.includes(key) || !operation.includes('requestMode')) throw new Error(`Missing shared operating-mode command path: ${key}`);
+}
+if (!operation.includes('commandAllModesOff') || !modeControl.includes('allModesOffCommands')) throw new Error('Missing verified All Modes Off control');
 
 for (const stateKey of [
   'flushPump_STATE',
@@ -101,4 +96,4 @@ if (!pagesBuilder.includes('Stamp every local module edge') || !pagesBuilder.inc
 if (!indexHtml.includes('update-banner') || !read('js/app.js').includes('checkDeploymentInfo')) throw new Error('Web update notification flow is missing');
 if (!updatePage.includes('getRegistrations') || !updatePage.includes("startsWith('ids-gui-')")) throw new Error('Force-update cache recovery page is incomplete');
 
-console.log(`UI audit passed: ${jsFiles.length + 2} scripts parsed, ${expectedCommands.length} commands verified.`);
+console.log(`UI audit passed: ${jsFiles.length + 2} scripts parsed, shared mode commands and ${expectedCommands.length} fixed commands verified.`);

@@ -9,7 +9,7 @@ export const CIRCUIT_TESTS = {
   },
   drain: {
     label: 'Drain circuit', mode: 'Drain_MODE',
-    outputs: ['DrainPump_STATE', 'DrainValve_STATE']
+    outputs: ['DrainPump_STATE', 'ManifoldValve1_STATE', 'ManifoldValve2_STATE']
   },
   bypass: {
     label: 'Bypass valve', mode: 'Bypass_MODE',
