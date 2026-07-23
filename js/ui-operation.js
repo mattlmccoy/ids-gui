@@ -129,8 +129,8 @@ function buildHTML() {
       <div class="kpi-tile" id="kpi-tile-pressure">
         <span class="kpi-label">Pressure</span>
         <span class="kpi-value" id="kpi-pressure" style="color:var(--accent-purple)">--</span>
-        <span class="kpi-unit">psi</span>
-        ${tachometerHTML('pressure', 'Measured', '0–100 psi')}
+        <span class="kpi-unit" title="R17 reports this field but the NANO 700 has no system pressure sensor, so it reads 0.">psi · not measured in R17</span>
+        ${tachometerHTML('pressure', 'Not measured (R17)', '0–100 psi')}
       </div>
       <div class="kpi-tile kpi-dual-pressure" id="kpi-tile-dual-pressure" style="display:none">
         <span class="kpi-label">Printhead Pressures</span>
@@ -696,7 +696,9 @@ function updateTachometer(id, rawValue, min, max) {
   el.setAttribute('aria-valuemax', String(max));
   el.setAttribute('aria-valuenow', String(value));
   const caption = el.querySelector('span');
-  if (caption) caption.textContent = `Measured · ${min}–${max} ${id === 'fluid' ? '°C' : 'psi'}`;
+  if (caption) caption.textContent = id === 'pressure'
+    ? `Not measured in R17 · 0–${max} psi`
+    : `Measured · ${min}–${max} ${id === 'fluid' ? '°C' : 'psi'}`;
 }
 
 function pushHistory(map, key, val) {
