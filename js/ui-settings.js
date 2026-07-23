@@ -41,7 +41,7 @@ const SETTINGS_GROUPS = [
     id: 'pressure', title: 'Pressure / Vacuum', icon: 'bi-speedometer',
     params: [
       { key: 'Vacuum_SETPOINT', label: 'Vacuum Setpoint', min: 0, max: 100, step: 1, unit: '%' },
-      { key: 'Flow_SETPOINT', label: 'Recirculation Drive', min: 0, max: 100, step: 1, unit: '%' },
+      { key: 'Flow_SETPOINT', label: 'Recirculation Drive (Flow)', min: 0, max: 100, step: 1, unit: '%' },
       { key: 'PressureMAX_SETPOINT', label: 'Max Pressure', min: 0, max: 100, step: 1, unit: 'psi' },
     ]
   },
