@@ -1,9 +1,28 @@
 # M0 Runbook — Toolchain + prove reflash-to-stock rollback
 
 Do this **on the Windows lab PC that's connected to the NANO 700**, before ever flashing a modified
-build. Goal: confirm the flash toolchain works and **prove you can always reflash stock R17** — the
-rollback that makes every later experiment recoverable. Gate to pass: stock R17 reflashes cleanly and
-the GUI reconnects and behaves exactly as before.
+build. Goal: confirm the flash toolchain works and **prove you can always reflash working firmware** —
+the rollback that makes every later experiment recoverable. Gate to pass: working firmware reflashes
+cleanly and the GUI reconnects and behaves exactly as before.
+
+## Why this is safe (read first if you're nervous)
+
+Two independent safety nets mean a bad flash is **recoverable, not a brick**:
+
+1. **You (almost certainly) cannot brick a Portenta H7 with `arduino-cli upload`.** It writes only the
+   *application* region (`0x08040000`+). The factory **DFU bootloader** in the low 256 KB is never
+   touched and is always reachable by **double-tapping the board's reset button**. So even a completely
+   broken app image → double-tap reset → reflash a good one. (The build folder even ships a separate
+   `*.with_bootloader.hex`, confirming the plain `.ino.bin` is app-only.)
+
+2. **You make your own guaranteed rollback before flashing anything** — see Step 0. Rather than trusting
+   that the repo `.bin` byte-matches whatever is on the board today, you first **dump the currently-
+   running firmware to a file**. That dump *is* the machine's exact working image; reflashing it restores
+   precisely what works now.
+
+So: the board can be re-entered via DFU no matter what, and you'll have a byte-exact copy of the current
+working firmware in hand before you take any risk. If the dump is blocked (see Step 0), the repo `.bin`
+plus the behavior check in Step 6 is the fallback rollback.
 
 ## Where things are
 - Vendor release folder: `NANO_SINGLE_R17_RELEASE (1)\` (sibling of the `ids-gui` repo). It contains:
@@ -14,9 +33,28 @@ the GUI reconnects and behaves exactly as before.
 - Board: Arduino **Portenta H7**, FQBN `arduino:mbed_portenta:envie_m7`, target core `cm7`.
 - Stock firmware self-reports `SoftwareRev = NANO_R17_RELEASE` (per the M1 spec).
 
-## Step 0 — Back up the golden image (do FIRST)
-Copy the whole `build\arduino.mbed_portenta.envie_m7\` folder somewhere safe (and ideally a second
-location off this PC). `NANO_SINGLE_R17_RELEASE.ino.bin` is your rollback — never overwrite it.
+## Step 0 — Make your rollback images (do FIRST, before anything else)
+
+**(a) Keep the vendor image.** Copy the whole `build\arduino.mbed_portenta.envie_m7\` folder somewhere
+safe (and a second location off this PC). `NANO_SINGLE_R17_RELEASE.ino.bin` is a rollback — never
+overwrite it. `SoftwareRev` for it is `NANO_R17_RELEASE`.
+
+**(b) Dump the firmware that's running RIGHT NOW (the better rollback).** This captures the machine's
+exact current working image, independent of whether the repo `.bin` matches it.
+- Install `dfu-util` (e.g. `winget install dfu-util`, or the STM32 tools) — or STM32CubeProgrammer if you
+  have an ST-LINK probe.
+- Put the Portenta in DFU: **double-tap its reset button** (the built-in green LED fades in/out = DFU mode).
+- List it: `dfu-util -l` (look for the Portenta / STM32 device, note its alt settings).
+- Read the internal flash to a file:
+  `dfu-util -a 0 -s 0x08000000:0x200000 -U board_current_R17.bin`
+  (0x08000000 = flash base incl. bootloader; 0x200000 = 2 MB, the H747 internal flash. Adjust the alt
+  `-a` / size to what `-l` reports.)
+- **Save `board_current_R17.bin` in two places.** This is your byte-exact rollback of the working machine.
+
+**If the dump fails / is refused:** the production firmware likely has **readout protection (RDP)**
+enabled — reading is blocked *by design* (you'd see an error, not a brick). That's fine: fall back to the
+vendor `.bin` from (a), and treat the Step 5→6 reflash-and-behavior-check as the proof that it's a valid
+rollback. Do **not** try to clear RDP — a full RDP regression can mass-erase the chip.
 
 ## Step 1 — Confirm the toolchain
 Open **cmd** in the `NANO_SINGLE_R17_RELEASE (1)` folder and run:
