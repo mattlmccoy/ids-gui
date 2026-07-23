@@ -5,6 +5,14 @@ import store from './state.js';
 const STORAGE_KEY = 'ids-dual-pressure-v1';
 const DEFAULTS = Object.freeze({ enabled: false, inletOffsetPsi: 0, returnOffsetPsi: 0, meniscusOffsetPsi: 0 });
 
+/* Chart/telemetry keys produced only by the dual-pressure feature. Gated on the enabled flag. */
+export const DUAL_PRESSURE_DERIVED_KEYS = Object.freeze([
+  'InletPressureAdjusted',
+  'ReturnPressureAdjusted',
+  'DifferentialPressureDerived',
+  'MeniscusPressureEstimated'
+]);
+
 export function getPressureSensingConfig() {
   try {
     const saved = JSON.parse(globalThis.localStorage?.getItem(STORAGE_KEY) || 'null');
@@ -28,6 +36,17 @@ export function normalizePressureSensingConfig(config = {}) {
     returnOffsetPsi: bounded(config?.returnOffsetPsi, -20, 20),
     meniscusOffsetPsi: bounded(config?.meniscusOffsetPsi, -20, 20)
   };
+}
+
+export function isDualPressureEnabled(config = getPressureSensingConfig()) {
+  return normalizePressureSensingConfig(config).enabled === true;
+}
+
+/* Returns the trace catalog unchanged when enabled; strips the derived dual-pressure series when disabled. */
+export function filterActivePressureTraces(traces = [], config = getPressureSensingConfig()) {
+  if (isDualPressureEnabled(config)) return [...traces];
+  const derived = new Set(DUAL_PRESSURE_DERIVED_KEYS);
+  return traces.filter(trace => !derived.has(trace?.key));
 }
 
 export function calculateDualPressure(data = {}, config = getPressureSensingConfig()) {
