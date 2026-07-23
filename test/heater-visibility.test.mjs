@@ -25,17 +25,42 @@ test('installed-channel changes persist', () => {
   assert.equal(JSON.parse(values.get('ids-heater-channels-v1')).MainHeater, true);
 });
 
-test('generic HTC fault is suppressed only when telemetry identifies an unused channel', () => {
-  heaters.setHeaterVisibility('MainHeater', false);
-  store.data = {
-    MainHeaterTemperature_STATE: 999,
-    AUXHeaterTemperature_STATE: 24
-  };
+test('generic HTC fault is shown only when an INSTALLED heater is actually faulted', () => {
+  heaters.setHeaterVisibility('MainHeater', false); // Main marked not installed
+  heaters.setHeaterVisibility('AuxHeater', true);   // Aux installed
+
+  // Disabled Main faulted, installed Aux fine → suppress
+  store.data = { MainHeaterTemperature_STATE: 999, AUXHeaterTemperature_STATE: 24 };
   assert.equal(heaters.shouldSuppressHeaterError('HTC_ERROR'), true);
 
-  store.data = {
-    MainHeaterTemperature_STATE: 24,
-    AUXHeaterTemperature_STATE: 24
-  };
+  // Both read normal → no installed channel faulted → suppress (the reported bug: this was showing)
+  store.data = { MainHeaterTemperature_STATE: 24, AUXHeaterTemperature_STATE: 24 };
+  assert.equal(heaters.shouldSuppressHeaterError('HTC_ERROR'), true);
+
+  // Installed Aux genuinely faulted → MUST show (safety)
+  store.data = { MainHeaterTemperature_STATE: 24, AUXHeaterTemperature_STATE: 999 };
   assert.equal(heaters.shouldSuppressHeaterError('HTC_ERROR'), false);
+
+  // Both faulted; installed Aux is faulted → show
+  store.data = { MainHeaterTemperature_STATE: 999, AUXHeaterTemperature_STATE: 999 };
+  assert.equal(heaters.shouldSuppressHeaterError('HTC_ERROR'), false);
+});
+
+test('channel-attributed and both-installed / both-uninstalled rules still hold', () => {
+  heaters.setHeaterVisibility('MainHeater', false);
+  heaters.setHeaterVisibility('AuxHeater', true);
+  store.data = { MainHeaterTemperature_STATE: 999, AUXHeaterTemperature_STATE: 999 };
+  // explicitly Main-attributed fault on a disabled Main → suppress regardless of temps
+  assert.equal(heaters.shouldSuppressHeaterError('MAIN_HEATER_TC_ERROR'), true);
+  // Aux-attributed fault while Aux installed → show
+  assert.equal(heaters.shouldSuppressHeaterError('AUX_HEATER_TC_ERROR'), false);
+
+  // both installed → never suppress
+  heaters.setHeaterVisibility('MainHeater', true);
+  assert.equal(heaters.shouldSuppressHeaterError('HTC_ERROR'), false);
+
+  // both uninstalled → always suppress
+  heaters.setHeaterVisibility('MainHeater', false);
+  heaters.setHeaterVisibility('AuxHeater', false);
+  assert.equal(heaters.shouldSuppressHeaterError('HTC_ERROR'), true);
 });
