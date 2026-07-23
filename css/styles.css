@@ -224,7 +224,7 @@ html, body {
   --tach-angle: -90deg;
   --tach-fill: 0 100;
   width: 100%;
-  margin-top: 0.15rem;
+  margin-top: auto;
   color: var(--text-muted);
   font-size: 0.55rem;
   text-align: center;
@@ -232,7 +232,7 @@ html, body {
 .mini-tach svg { display: block; width: 70px; height: 38px; overflow: visible; margin: 0 auto -0.15rem; }
 .mini-tach-track, .mini-tach-fill { fill: none; stroke-width: 7; stroke-linecap: round; }
 .mini-tach-track { stroke: rgba(148,163,184,0.18); }
-.mini-tach-fill { stroke: var(--accent-cyan); stroke-dasharray: var(--tach-fill); transition: stroke-dasharray .35s ease; }
+.mini-tach-fill { stroke: var(--tach-color, var(--accent-cyan)); stroke-dasharray: var(--tach-fill); transition: stroke-dasharray .35s ease; }
 .mini-tach-needle { stroke: var(--text-primary); stroke-width: 2; transform-origin: 50px 49px; transform: rotate(var(--tach-angle)); transition: transform .35s ease; }
 .mini-tach-hub { fill: var(--text-primary); }
 
