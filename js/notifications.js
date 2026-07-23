@@ -3,7 +3,7 @@
 import store from './state.js';
 import { getFloatDisplayState } from './float-state.js';
 import { decodeAlarmStatus, isActiveError } from './errors.js';
-import { shouldSuppressHeaterError } from './heater-visibility.js';
+import { shouldSuppressHeaterError, relayAlarmStatus } from './heater-visibility.js';
 import { calculateDualPressure } from './pressure-sensing.js';
 
 const LOCAL_ENABLED_KEY = 'ids-weir-ovf-notifications';
@@ -253,6 +253,10 @@ async function postTelemetrySnapshot(config) {
       ? getFloatDisplayState(key, store.data[key])
       : store.data[key];
   }
+  // Relay the effective alarm: a heater alarm suppressed on the desktop (unused channel) is cleared
+  // here so the remote viewer shows the same "no active alarm" rather than the raw controller code.
+  if (telemetry.AlarmStatus !== undefined) telemetry.AlarmStatus = relayAlarmStatus(telemetry.AlarmStatus);
+  if (telemetry.ErrorCode_STATE !== undefined) telemetry.ErrorCode_STATE = relayAlarmStatus(telemetry.ErrorCode_STATE);
   const dualPressure = calculateDualPressure(store.data);
   if (dualPressure.available) {
     telemetry.InletPressureAdjusted = dualPressure.inletPsi;

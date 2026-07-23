@@ -64,3 +64,23 @@ test('channel-attributed and both-installed / both-uninstalled rules still hold'
   heaters.setHeaterVisibility('AuxHeater', false);
   assert.equal(heaters.shouldSuppressHeaterError('HTC_ERROR'), true);
 });
+
+test('relayAlarmStatus clears a suppressed heater alarm for downstream consumers', () => {
+  heaters.setHeaterVisibility('MainHeater', false); // Main not installed
+  heaters.setHeaterVisibility('AuxHeater', true);   // Aux installed
+
+  // Suppressed HTC (Main disabled, Aux fine) → cleared, op-status prefix preserved
+  store.data = { MainHeaterTemperature_STATE: 999, AUXHeaterTemperature_STATE: 24 };
+  assert.equal(heaters.relayAlarmStatus('STOP-HTC'), 'STOP-NO_ERROR');
+  assert.equal(heaters.relayAlarmStatus('HTC'), 'NO_ERROR');
+
+  // Installed Aux genuinely faulted → real alarm passes through unchanged
+  store.data = { MainHeaterTemperature_STATE: 24, AUXHeaterTemperature_STATE: 999 };
+  assert.equal(heaters.relayAlarmStatus('STOP-HTC'), 'STOP-HTC');
+
+  // Non-heater alarms and NO_ERROR pass through unchanged
+  store.data = { MainHeaterTemperature_STATE: 24, AUXHeaterTemperature_STATE: 24 };
+  assert.equal(heaters.relayAlarmStatus('RUN-FLOAT_ERROR'), 'RUN-FLOAT_ERROR');
+  assert.equal(heaters.relayAlarmStatus('RUN-NO_ERROR'), 'RUN-NO_ERROR');
+  assert.equal(heaters.relayAlarmStatus(''), '');
+});
