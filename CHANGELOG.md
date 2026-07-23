@@ -1,6 +1,30 @@
 # Changelog
 
-All notable changes to this project are documented in this file.
+All notable changes to this project are documented in this file. The most recent entries are
+also shown in-app via the header **What's new** dropdown (see `js/changelog.js`).
+
+## 2026-07-23
+
+### Added
+- **What's new** dropdown in the header, backed by a human-readable in-app changelog
+  (`js/changelog.js`); a small badge appears after each update until viewed.
+- Global **Simple / Pro** dashboard switch in the header.
+- Per-chart show/hide toggles on the Trends tab (Temperature, Pressure / Vacuum, Floats & State).
+- Commissioning **Skip test** and **Start over** controls.
+
+### Changed
+- Serial now **auto-reconnects** after an unexpected controller disconnect, resuming telemetry
+  only (no commands are re-sent); manual Disconnect cancels it.
+- Connect sends an immediate telemetry poll so readouts populate right away.
+- The printhead inlet/return dual-pressure feature is hidden everywhere unless enabled in Settings.
+- Commissioning float checks are observational (floats are not manually forced).
+- The "Recirc Drive" control keeps the old **Flow** name alongside it.
+
+### Fixed
+- Commissioning page no longer glitches every second (structural re-render only; live values and the
+  evidence chart update in place).
+- A heater/HTC alarm from a channel marked not-installed is reliably suppressed and no longer blocks
+  the guided commissioning tests.
 
 ## 2026-07-22
 

@@ -74,6 +74,10 @@
         <button type="button" class="btn btn-sm btn-outline-primary d-none" id="install-app" title="Install this app">
           <i class="bi bi-download me-1"></i>Install
         </button>
+        <button type="button" class="btn btn-sm btn-outline-secondary position-relative" id="whatsnew-btn" data-bs-toggle="modal" data-bs-target="#whatsnew-modal" title="What&#39;s new in this build">
+          <i class="bi bi-stars"></i>
+          <span id="whatsnew-badge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill text-bg-danger d-none" style="font-size:.5rem;padding:.3em .4em">new</span>
+        </button>
         <button type="button" class="btn btn-sm btn-outline-secondary" id="theme-toggle" title="Toggle theme">
           <i class="bi bi-moon-stars-fill" id="theme-toggle-icon"></i>
         </button>
@@ -207,6 +211,20 @@
   </div>
 
   <!-- Confirmation Modal -->
+  <!-- What's new modal -->
+  <div class="modal fade" id="whatsnew-modal" tabindex="-1" aria-labelledby="whatsnew-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="whatsnew-title"><i class="bi bi-stars me-1"></i>What&#39;s new</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body" id="whatsnew-body"></div>
+        <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button></div>
+      </div>
+    </div>
+  </div>
+
   <div class="modal fade" id="confirm-modal" tabindex="-1" aria-labelledby="confirm-modal-title"
        aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
