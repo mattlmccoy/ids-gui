@@ -1,3 +1,5 @@
+import { orderDevicesByFreshness } from './remote-devices.js';
+
 const STORAGE_KEY = 'ids-remote-viewer-v1';
 const DEFAULT_WORKER_URL = 'https://ids-alert-relay.mattlmccoy.workers.dev';
 let refreshTimer = null;
@@ -87,51 +89,70 @@ function renderDevices(devices, generatedAt, commands) {
     return;
   }
   const now = new Date(generatedAt || Date.now()).getTime();
-  elements.devices.innerHTML = devices.map(device => {
-    const data = device.telemetry || {};
-    const ageSeconds = Math.max(0, Math.round((now - new Date(device.updated_at).getTime()) / 1000));
-    const live = device.connection === 'CONNECTED' && ageSeconds <= 30;
-    const status = live ? 'LIVE' : device.connection === 'CONNECTED' ? 'STALE' : 'OFFLINE';
-    const badge = live ? 'text-bg-success' : status === 'STALE' ? 'text-bg-warning' : 'text-bg-secondary';
-    const mode = activeMode(data);
-    const recent = commands.find(command => command.device_id === device.device_id);
-    const disabled = live ? '' : ' disabled';
-    return `<div class="col-12">
-      <div class="dash-card ${live ? 'accent-green' : 'accent-orange'}">
-        <div class="card-header d-flex justify-content-between align-items-center">
-          <span><i class="bi bi-cpu me-1"></i>${escapeHtml(device.system_id || device.device_id)}</span>
-          <span class="badge ${badge}">${status}</span>
+  // One machine at a time: show only the freshest device; older/stale records (the Worker keeps
+  // every device that ever reported) stay hidden behind a small toggle to avoid confusion.
+  const sorted = orderDevicesByFreshness(devices);
+  const [primary, ...others] = sorted;
+  let html = renderDeviceCard(primary, now, commands, 0);
+  if (others.length) {
+    const noun = others.length > 1 ? 'devices' : 'device';
+    html += `<div class="col-12">
+      <button class="btn btn-sm btn-outline-secondary" data-remote-toggle="#remote-hidden-devices" data-show-label="Show ${others.length} older ${noun}" data-hide-label="Hide older ${noun}">Show ${others.length} older ${noun}</button>
+      <div id="remote-hidden-devices" class="d-none mt-3"><div class="row g-3">${others.map((device, index) => renderDeviceCard(device, now, commands, index + 1)).join('')}</div></div>
+    </div>`;
+  }
+  elements.devices.innerHTML = html;
+}
+
+function renderDeviceCard(device, now, commands, index) {
+  const data = device.telemetry || {};
+  const ageSeconds = Math.max(0, Math.round((now - new Date(device.updated_at).getTime()) / 1000));
+  const live = device.connection === 'CONNECTED' && ageSeconds <= 30;
+  const status = live ? 'LIVE' : device.connection === 'CONNECTED' ? 'STALE' : 'OFFLINE';
+  const badge = live ? 'text-bg-success' : status === 'STALE' ? 'text-bg-warning' : 'text-bg-secondary';
+  const mode = activeMode(data);
+  const recent = commands.find(command => command.device_id === device.device_id);
+  const disabled = live ? '' : ' disabled';
+  const alarmed = alarmActive(data);
+  const detailsId = `remote-details-${index}`;
+  return `<div class="col-12">
+    <div class="dash-card ${live ? 'accent-green' : 'accent-orange'}">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-cpu me-1"></i>${escapeHtml(device.system_id || device.device_id)}</span>
+        <span class="badge ${badge}">${status}</span>
+      </div>
+      <div class="card-body">
+        <div class="row g-2 mb-3">
+          ${metric('Mode', mode)}
+          ${metric('Vacuum', withUnit(data.Vacuum_STATE, 'cmH₂O'))}
+          ${metric('Fluid temp', withUnit(data.FluidTemperature_STATE, '°C'))}
+          ${data.DifferentialPressureDerived !== undefined ? metric('Printhead ΔP', withUnit(data.DifferentialPressureDerived, 'psi')) : ''}
         </div>
-        <div class="card-body">
-          <div class="row g-2 mb-3">
-            ${metric('Mode', mode)}
-            ${metric('Vacuum', display(data.Vacuum_STATE))}
-            ${metric('Pressure', display(data.Pressure_STATE))}
-            ${metric('Fluid temp', withUnit(data.FluidTemperature_STATE, '°C'))}
-            ${data.DifferentialPressureDerived !== undefined ? metric('Printhead ΔP', withUnit(data.DifferentialPressureDerived, 'psi')) : ''}
-            ${data.MeniscusPressureEstimated !== undefined ? metric('Meniscus estimate', withUnit(data.MeniscusPressureEstimated, 'psi')) : ''}
+        ${alarmed
+          ? `<div class="alert alert-danger py-2 small mb-3 fw-semibold"><i class="bi bi-exclamation-triangle-fill me-1"></i>Alarm: ${escapeHtml(data.AlarmStatus ?? data.ErrorCode_STATE ?? '—')}</div>`
+          : `<div class="small text-success mb-3"><i class="bi bi-check-circle me-1"></i>No active alarm</div>`}
+        <div class="remote-controls" data-device-id="${escapeHtml(device.device_id)}">
+          <div class="d-flex justify-content-between align-items-center mb-2"><strong>Key controls</strong><span class="small text-muted">15-second expiry · local latch required</span></div>
+          <div class="d-flex gap-2 mb-2">
+            <button class="btn btn-sm btn-success remote-command" data-command="run"${disabled}><i class="bi bi-play-fill me-1"></i>Run</button>
+            <button class="btn btn-sm btn-danger remote-command" data-command="stop"${disabled}><i class="bi bi-stop-fill me-1"></i>Stop</button>
           </div>
+          <div class="row g-2 align-items-end">
+            ${controlInput('set_vacuum', 'Vacuum', 0, 100, data.Vacuum_SETPOINT, '%', disabled)}
+            ${controlInput('set_flow', 'Recirc drive (Flow)', 0, 100, data.Flow_SETPOINT, '%', disabled)}
+            ${controlInput('set_temperature', 'Fluid temp', 0, 70, data.Temperature_SETPOINT, '°C', disabled)}
+          </div>
+          <div class="small mt-2 remote-command-feedback ${recent?.status === 'rejected' ? 'text-danger' : 'text-muted'}">${recent ? `Latest: ${escapeHtml(commandLabel(recent.command_type))} · ${escapeHtml(recent.status)}${recent.result_message ? ` · ${escapeHtml(recent.result_message)}` : ''}` : 'No remote commands recorded.'}</div>
+        </div>
+        <button class="btn btn-sm btn-link px-0 mt-2" data-remote-toggle="#${detailsId}" data-show-label="Show details" data-hide-label="Hide details">Show details</button>
+        <div id="${detailsId}" class="d-none">
           <div class="d-flex flex-wrap gap-2 mb-2">${floatBadges(data)}</div>
           <div class="d-flex flex-wrap gap-2 mb-2">${outputBadges(data)}</div>
           <div class="small text-muted">Firmware ${escapeHtml(data.SoftwareRev ?? '—')} · Last update ${formatAge(ageSeconds)} · ${formatTime(device.updated_at)}</div>
-          <div class="small mt-1 ${alarmActive(data) ? 'text-danger fw-semibold' : 'text-success'}">Alarm: ${escapeHtml(data.AlarmStatus ?? data.ErrorCode_STATE ?? '—')}</div>
-          <div class="border-top mt-3 pt-3 remote-controls" data-device-id="${escapeHtml(device.device_id)}">
-            <div class="d-flex justify-content-between align-items-center mb-2"><strong>Key controls</strong><span class="small text-muted">15-second expiry · local latch required</span></div>
-            <div class="d-flex gap-2 mb-2">
-              <button class="btn btn-sm btn-success remote-command" data-command="run"${disabled}><i class="bi bi-play-fill me-1"></i>Run</button>
-              <button class="btn btn-sm btn-danger remote-command" data-command="stop"${disabled}><i class="bi bi-stop-fill me-1"></i>Stop</button>
-            </div>
-            <div class="row g-2 align-items-end">
-              ${controlInput('set_vacuum', 'Vacuum', 0, 100, data.Vacuum_SETPOINT, '%', disabled)}
-              ${controlInput('set_flow', 'Recirc drive (Flow)', 0, 100, data.Flow_SETPOINT, '%', disabled)}
-              ${controlInput('set_temperature', 'Fluid temp', 0, 70, data.Temperature_SETPOINT, '°C', disabled)}
-            </div>
-            <div class="small mt-2 remote-command-feedback ${recent?.status === 'rejected' ? 'text-danger' : 'text-muted'}">${recent ? `Latest: ${escapeHtml(commandLabel(recent.command_type))} · ${escapeHtml(recent.status)}${recent.result_message ? ` · ${escapeHtml(recent.result_message)}` : ''}` : 'No remote commands recorded.'}</div>
-          </div>
         </div>
       </div>
-    </div>`;
-  }).join('');
+    </div>
+  </div>`;
 }
 
 function controlInput(command, label, min, max, value, unit, disabled) {
@@ -142,6 +163,15 @@ function controlInput(command, label, min, max, value, unit, disabled) {
 }
 
 async function onDeviceControlClick(event) {
+  const toggle = event.target.closest('[data-remote-toggle]');
+  if (toggle) {
+    const target = document.querySelector(toggle.dataset.remoteToggle);
+    if (target) {
+      const hidden = target.classList.toggle('d-none');
+      toggle.textContent = hidden ? (toggle.dataset.showLabel || 'Show') : (toggle.dataset.hideLabel || 'Hide');
+    }
+    return;
+  }
   const button = event.target.closest('.remote-command');
   if (!button) return;
   const controls = button.closest('.remote-controls');
