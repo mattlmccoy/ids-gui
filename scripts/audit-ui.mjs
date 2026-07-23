@@ -24,6 +24,7 @@ const validation = read('js/ui-validation.js');
 const debug = read('js/ui-debug.js');
 const ink = read('js/ui-ink.js');
 const modeControl = read('js/mode-control.js');
+const experienceMode = read('js/experience-mode.js');
 const pagesWorkflow = read('.github/workflows/deploy-pages.yml');
 const pagesBuilder = read('scripts/build-pages.mjs');
 const indexHtml = read('index.html');
@@ -41,6 +42,15 @@ for (const key of ['Run_MODE', 'Purge_MODE', 'Flush_MODE', 'Drain_MODE', 'Bypass
   if (!modeControl.includes(key) || !operation.includes('requestMode')) throw new Error(`Missing shared operating-mode command path: ${key}`);
 }
 if (!operation.includes('commandAllModesOff') || !modeControl.includes('allModesOffCommands')) throw new Error('Missing verified All Modes Off control');
+for (const marker of ['data-experience-mode-option="simple"', 'data-experience-mode-option="pro"', 'Show all settings']) {
+  if (!settings.includes(marker)) throw new Error(`Settings experience selector is missing ${marker}`);
+}
+for (const source of [operation, settings, debug]) {
+  if (!source.includes('data-experience-reveal') || !source.includes('experience-advanced')) throw new Error('Simple mode is missing an advanced-feature escape hatch');
+}
+if (!read('js/app.js').includes('initExperienceMode()') || !experienceMode.includes("STORAGE_KEY = 'ids.experienceMode'")) {
+  throw new Error('Persistent Simple/Pro experience mode is not initialized');
+}
 for (const marker of ['operation-mode-help', 'What do these modes do?', 'GUI auto-off assist', 'scheduleAutoOffTimer', 'severity-ok', 'mini-tach']) {
   if (!operation.includes(marker)) throw new Error(`Operation context/safeguard UI is missing ${marker}`);
 }

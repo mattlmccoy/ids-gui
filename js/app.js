@@ -17,6 +17,7 @@ import { initCSVExport, exportSessionCSV } from './csv-export.js';
 import { initNotifications } from './notifications.js';
 import { initRemoteControl } from './remote-control.js';
 import { initDiagnostics } from './diagnostics.js';
+import { initExperienceMode } from './experience-mode.js';
 
 const CURRENT_WEB_BUILD = document.querySelector('meta[name="ids-build-commit"]')?.content || 'local';
 const UPDATE_CHECK_INTERVAL_MS = 60_000;
@@ -25,6 +26,7 @@ const UPDATE_CHECK_INTERVAL_MS = 60_000;
 
 function boot() {
   initThemeToggle();
+  initExperienceMode();
   initSerialPicker();
   initDeploymentUpdates();
   initPWA();

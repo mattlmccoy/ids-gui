@@ -640,6 +640,27 @@ html, body {
 }
 
 /* ---------- Settings Tab ---------- */
+.experience-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .8rem 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+}
+.experience-toolbar > div:first-child { display: grid; gap: .1rem; }
+.experience-toolbar strong { color: var(--text-primary); font-size: .95rem; }
+.experience-toolbar small { color: var(--text-muted); font-size: .7rem; }
+.experience-eyebrow { color: var(--accent-cyan); font-size: .6rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+.experience-actions { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; justify-content: flex-end; }
+.experience-segmented { display: inline-flex; padding: .2rem; border: 1px solid var(--border-color); border-radius: .55rem; background: var(--bg-input); }
+.experience-segmented button { border: 0; border-radius: .38rem; padding: .35rem .65rem; color: var(--text-muted); background: transparent; font-size: .72rem; font-weight: 700; }
+.experience-segmented button.active { color: #fff; background: var(--accent-blue); box-shadow: var(--shadow-sm); }
+[data-experience-mode="simple"][data-experience-advanced="false"] .experience-advanced { display: none !important; }
+[data-experience-mode="simple"][data-experience-advanced="false"] #debug-diagnostics-side { width: 100%; }
+
 .settings-group {
   border-top: 2px solid var(--accent-purple);
 }
@@ -870,4 +891,6 @@ footer {
   .mode-safeguard-panel > small { grid-column: 1; }
   .operation-mode-help > summary { grid-template-columns: auto 1fr auto; }
   .operation-mode-help > summary small { display: none; }
+  .experience-toolbar { align-items: flex-start; flex-direction: column; }
+  .experience-actions { justify-content: flex-start; }
 }

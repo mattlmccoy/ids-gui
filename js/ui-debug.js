@@ -5,6 +5,7 @@ import { send, getPollIntervalMs } from './serial.js';
 import { MODE_DEFINITIONS } from './mode-control.js';
 import { downloadDiagnosticBundle, getDiagnosticSnapshot } from './diagnostics.js';
 import { confirm } from './ui-dialogs.js';
+import { syncExperienceControls } from './experience-mode.js';
 
 const MODE_PREVIEWS = ['live', 'run', 'purge', 'flush', 'drain', 'bypass'];
 const NODE_STATES = {
@@ -40,13 +41,14 @@ export function initDebugTab() {
   updateSchematic(store.data);
   renderTelemetry();
   renderEventHistory();
+  syncExperienceControls();
 }
 
 function buildHTML() {
   return `
     <div class="debug-toolbar mb-3">
       <div><h1 class="h4 mb-1">Debug & system map</h1><div class="text-muted small">Engineering detail, raw telemetry, and support tools live here so Operation can stay focused.</div></div>
-      <button class="btn btn-outline-primary" id="debug-export"><i class="bi bi-download me-1"></i>Export diagnostic bundle</button>
+      <div class="d-flex gap-2 flex-wrap"><button class="btn btn-sm btn-outline-secondary" data-experience-reveal data-show-label="Show engineering details" data-hide-label="Hide engineering details"></button><button class="btn btn-outline-primary" id="debug-export"><i class="bi bi-download me-1"></i>Export diagnostic bundle</button></div>
     </div>
 
     <div class="debug-summary-grid mb-3">
@@ -81,25 +83,25 @@ function buildHTML() {
     </div>
 
     <div class="row g-3 mb-3">
-      <div class="col-xl-7">
+      <div class="col-xl-7 experience-advanced">
         <div class="dash-card h-100">
           <div class="card-header d-flex justify-content-between align-items-center gap-2"><span><i class="bi bi-list-columns-reverse me-1"></i>Raw telemetry</span><input id="debug-filter" class="form-control form-control-sm debug-filter" placeholder="Filter key or value" aria-label="Filter raw telemetry"></div>
           <div class="debug-table-wrap"><table class="table table-sm monitor-table mb-0"><thead><tr><th>Key</th><th>Value</th><th>Type</th></tr></thead><tbody id="debug-telemetry-body"></tbody></table></div>
         </div>
       </div>
-      <div class="col-xl-5">
+      <div class="col-xl-5" id="debug-diagnostics-side">
         <div class="dash-card mb-3">
           <div class="card-header"><i class="bi bi-activity me-1"></i>Automatic findings</div>
           <div class="card-body" id="debug-findings"></div>
         </div>
-        <div class="dash-card">
+        <div class="dash-card experience-advanced">
           <div class="card-header"><i class="bi bi-clock-history me-1"></i>Recent commands & events</div>
           <div class="debug-event-list" id="debug-event-list"></div>
         </div>
       </div>
     </div>
 
-    <div class="dash-card accent-red mb-3">
+    <div class="dash-card accent-red mb-3 experience-advanced">
       <div class="card-header"><i class="bi bi-terminal me-1"></i>Advanced raw command</div>
       <div class="card-body">
         <div class="d-flex gap-2 flex-wrap"><input type="text" class="form-control form-control-sm font-monospace flex-grow-1" id="debug-raw-input" placeholder='{"GET":"ALL"}'><button class="btn btn-outline-danger" id="debug-raw-send" disabled>Review & send</button></div>
@@ -108,7 +110,7 @@ function buildHTML() {
       </div>
     </div>
 
-    <div class="dash-card mb-3">
+    <div class="dash-card mb-3 experience-advanced">
       <div class="card-header"><i class="bi bi-book me-1"></i>R17 mode reference</div>
       <div class="card-body"><div class="debug-mode-grid">${Object.entries(MODE_DEFINITIONS).map(([key, mode]) => `
         <details class="debug-mode-card"><summary><span>${mode.label}</span><small>${mode.outputs.join(' · ')}</small></summary><div class="pt-2"><p>${mode.purpose}</p><p><strong>When to use:</strong> ${mode.use}</p><p class="text-muted mb-0"><strong>R17 note:</strong> ${mode.warning}</p></div></details>`).join('')}</div></div>

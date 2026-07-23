@@ -14,6 +14,7 @@ import {
   formatCountdown, modeReadbackMatches, normalizeAutoOffSeconds
 } from './mode-control.js';
 import { downloadDiagnosticBundle } from './diagnostics.js';
+import { syncExperienceControls } from './experience-mode.js';
 
 /* ---------- Setpoint Definitions ---------- */
 const SETPOINTS = [
@@ -76,6 +77,7 @@ export function initOperationTab() {
     updateAlarmBanner({ raw: store.alarmRaw || '' });
   });
   store.on('float-config', () => updateDisplay(store.data));
+  syncExperienceControls();
   window.addEventListener('beforeunload', event => {
     if (!autoOffTimers.size) return;
     event.preventDefault();
@@ -199,7 +201,7 @@ function buildHTML() {
             </div>
             <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap mt-3">
               <div class="mode-command-status" id="mode-command-status" role="status">Buttons reflect live controller state.</div>
-              <button class="btn btn-sm btn-outline-info" id="btn-open-system-map"><i class="bi bi-diagram-3 me-1"></i>System map & mode guide</button>
+              <div class="d-flex gap-2 flex-wrap"><button class="btn btn-sm btn-outline-secondary" data-experience-reveal data-show-label="Show advanced controls" data-hide-label="Hide advanced controls"></button><button class="btn btn-sm btn-outline-info" id="btn-open-system-map"><i class="bi bi-diagram-3 me-1"></i>System map & mode guide</button></div>
             </div>
             ${modeHelpHTML()}
             <div class="alert alert-warning py-2 mt-3 mb-0 d-none" id="bypass-active-warning"><strong>Bypass is active.</strong> It can remain open during Run and has no firmware timeout.</div>
@@ -233,7 +235,7 @@ function buildHTML() {
         </div>
 
         <!-- Setpoints (2-column grid) -->
-        <div class="dash-card accent-purple mb-3">
+        <div class="dash-card accent-purple mb-3 experience-advanced">
           <div class="card-header"><i class="bi bi-sliders2 me-1"></i> Setpoints</div>
           <div class="card-body">
             <div class="sp-grid">
@@ -263,7 +265,7 @@ function buildHTML() {
       <!-- Right: Indicators -->
       <div class="col-xl-5">
         <!-- Config Files -->
-        <div class="dash-card accent-cyan mb-3">
+        <div class="dash-card accent-cyan mb-3 experience-advanced">
           <div class="card-header"><i class="bi bi-file-earmark-text me-1"></i> Config Files</div>
           <div class="card-body">
             <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -288,7 +290,7 @@ function buildHTML() {
           </div>
         </div>
         <!-- Heaters -->
-        <div class="dash-card accent-amber mb-3">
+        <div class="dash-card accent-amber mb-3 experience-advanced">
           <div class="card-header"><i class="bi bi-fire me-1"></i> Heaters</div>
           <div class="card-body" style="padding:0.5rem 1rem">
             ${HEATERS.map(h => `
@@ -302,7 +304,7 @@ function buildHTML() {
         </div>
 
         <!-- Pumps -->
-        <div class="dash-card accent-green mb-3">
+        <div class="dash-card accent-green mb-3 experience-advanced">
           <div class="card-header"><i class="bi bi-water me-1"></i> Pumps</div>
           <div class="card-body" style="padding:0.5rem 1rem">
             ${PUMPS.map(p => `
@@ -315,7 +317,7 @@ function buildHTML() {
         </div>
 
         <!-- Valves -->
-        <div class="dash-card accent-cyan mb-3">
+        <div class="dash-card accent-cyan mb-3 experience-advanced">
           <div class="card-header"><i class="bi bi-diagram-3 me-1"></i> Valves</div>
           <div class="card-body" style="padding:0.5rem 1rem">
             ${VALVES.map(v => `

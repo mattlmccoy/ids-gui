@@ -15,11 +15,12 @@ import {
 import { enableRemoteControl, disableRemoteControl, getRemoteControlState } from './remote-control.js';
 import { getHeaterVisibility, setHeaterVisibility } from './heater-visibility.js';
 import { formatCountdown } from './mode-control.js';
+import { syncExperienceControls } from './experience-mode.js';
 
 /* ---------- Settings Groups ---------- */
 const SETTINGS_GROUPS = [
   {
-    id: 'network', title: 'Network Configuration', icon: 'bi-ethernet',
+    id: 'network', title: 'Network Configuration', icon: 'bi-ethernet', advanced: true,
     params: [
       { key: 'IP1_SETUP', label: 'IP Octet 1', min: 0, max: 255, step: 1, unit: '' },
       { key: 'IP2_SETUP', label: 'IP Octet 2', min: 0, max: 255, step: 1, unit: '' },
@@ -44,7 +45,7 @@ const SETTINGS_GROUPS = [
     ]
   },
   {
-    id: 'pumps', title: 'Pump Speeds', icon: 'bi-water',
+    id: 'pumps', title: 'Pump Speeds', icon: 'bi-water', advanced: true,
     params: [
       { key: 'InputPumpSpeed_SETPOINT', label: 'Input Pump', min: 0, max: 100, step: 1, unit: '%' },
       { key: 'FlushPumpSpeed_SETPOINT', label: 'Flush Pump', min: 0, max: 100, step: 1, unit: '%' },
@@ -53,7 +54,7 @@ const SETTINGS_GROUPS = [
     ]
   },
   {
-    id: 'safety', title: 'Safety / Timeouts', icon: 'bi-shield-check',
+    id: 'safety', title: 'Safety / Timeouts', icon: 'bi-shield-check', advanced: true,
     params: [
       { key: 'BulkSupplyTimeout_SETPOINT', label: 'Bulk Supply Timeout', min: 0, max: 3600, step: 1, unit: 's' },
     ]
@@ -83,13 +84,24 @@ export function initSettingsTab() {
   store.on('remote-control', syncRemoteControlStatus);
   store.on('heater-visibility', syncHeaterChannelSettings);
   setInterval(() => syncRemoteControlStatus(), 1000);
+  syncExperienceControls();
 }
 
 function buildHTML() {
   return `
+    <div class="experience-toolbar mb-3">
+      <div><span class="experience-eyebrow">Interface</span><strong><span data-experience-current>Simple</span> dashboard</strong><small>Both views use the same controls. Simple reduces visual density; Pro opens the engineering surface.</small></div>
+      <div class="experience-actions">
+        <div class="experience-segmented" role="group" aria-label="Dashboard complexity">
+          <button type="button" data-experience-mode-option="simple" aria-pressed="true"><i class="bi bi-stars me-1"></i>Simple</button>
+          <button type="button" data-experience-mode-option="pro" aria-pressed="false"><i class="bi bi-cpu me-1"></i>Pro</button>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-experience-reveal data-show-label="Show all settings" data-hide-label="Hide advanced settings"></button>
+      </div>
+    </div>
     <div class="row g-2">
       ${SETTINGS_GROUPS.map(group => `
-        <div class="col-xl-4 col-lg-6">
+        <div class="col-xl-4 col-lg-6 ${group.advanced ? 'experience-advanced' : ''}">
           <div class="dash-card settings-group mb-3">
             <div class="card-header">
               <i class="bi ${group.icon} me-1"></i> ${group.title}
@@ -120,7 +132,7 @@ function buildHTML() {
       `).join('')}
     </div>
     <div class="row g-2">
-      <div class="col-xl-4 col-lg-6">
+      <div class="col-xl-4 col-lg-6 experience-advanced">
         <div class="dash-card settings-group mb-3">
           <div class="card-header">
             <i class="bi bi-sliders me-1"></i> Weir Float Logic
@@ -180,7 +192,7 @@ function buildHTML() {
           </div>
         </div>
       </div>
-      <div class="col-xl-4 col-lg-6">
+      <div class="col-xl-4 col-lg-6 experience-advanced">
         <div class="dash-card settings-group mb-3">
           <div class="card-header d-flex justify-content-between align-items-center">
             <span><i class="bi bi-fire me-1"></i> Installed Heater Channels</span>
@@ -220,7 +232,7 @@ function buildHTML() {
               Includes Weir/Supply overflow, firmware alarms, unexpected disconnects, stale telemetry, and read-only mobile status.
               Repeated readings are suppressed; alerts are sent only after the configured debounce.
             </div>
-            <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="remote-pro-config experience-advanced"><div class="d-flex justify-content-between align-items-center mb-2">
               <span class="small fw-semibold">Notification types</span>
               <span class="small" style="color:var(--text-muted)">Changes apply after Save</span>
             </div>
@@ -270,7 +282,7 @@ function buildHTML() {
                        min="5" max="300" step="1">
               </div>
             </div>
-            <div class="d-flex align-items-center gap-2 mt-3 flex-wrap">
+            </div><div class="d-flex align-items-center gap-2 mt-3 flex-wrap">
               <button class="btn-control btn-connect" id="btn-save-remote-alerts">
                 <i class="bi bi-check-lg me-1"></i>Save
               </button>
