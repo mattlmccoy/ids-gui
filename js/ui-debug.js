@@ -7,6 +7,12 @@ import { downloadDiagnosticBundle, getDiagnosticSnapshot } from './diagnostics.j
 import { confirm } from './ui-dialogs.js';
 import { syncExperienceControls } from './experience-mode.js';
 import { getFirmwareSimulatorState, startFirmwareSimulator, stopFirmwareSimulator } from './firmware-simulator.js';
+import { getFloatDisplayState } from './float-state.js';
+
+// Telemetry keys that are floats: their displayed on/off must go through
+// getFloatDisplayState so the map matches the rest of the UI (e.g. Weir OVF is
+// display-inverted by default), rather than lighting on the raw firmware value.
+const FLOAT_KEYS = new Set(['WeirFloat_STATE', 'WeirOverflowFloat_STATE']);
 
 // No flush preview: this build has no flush hardware (FIRMWARE_SPEC_R17 §3 shows a
 // flushValve/flushPump output, but nothing is plumbed to it here).
@@ -41,6 +47,7 @@ export function initDebugTab() {
     renderTelemetry();
   });
   store.on('connection', () => { updateLiveSummary(store.data); updateSimulatorUI(); });
+  store.on('float-config', () => updateSchematic(store.data));
   store.on('simulation', updateSimulatorUI);
   store.on('log', renderEventHistory);
   store.on('command-sent', renderEventHistory);
@@ -206,7 +213,7 @@ function plumbingSvg() {
     <text class="map-note" x="60" y="196">recirc</text>
     <text class="map-note" x="206" y="196">supply</text>
     <text class="map-note" x="452" y="248">thermocouple</text>
-    <text class="map-note" x="255" y="368">vacuum → vac pump</text>
+    <text class="map-note" x="508" y="360">vacuum</text>
     <text class="map-note" x="985" y="182">2 inlets</text>
     <text class="map-note" x="1150" y="150">2 outlets</text>
     <text class="map-note" x="1028" y="348">nozzles → ink out</text>
@@ -344,7 +351,8 @@ function updateSchematic(data) {
     if (!node) continue;
     const value = data[key];
     const previewOn = selectedPreview !== 'live' && previewOutputs(selectedPreview).includes(key);
-    const on = previewOn || Number(value) === 1;
+    const liveOn = FLOAT_KEYS.has(key) ? getFloatDisplayState(key, value) === 1 : Number(value) === 1;
+    const on = previewOn || liveOn;
     node.classList.toggle('on', on);
     node.classList.toggle('unknown', selectedPreview === 'live' && value === undefined);
     const state = node.querySelector('.map-state');
