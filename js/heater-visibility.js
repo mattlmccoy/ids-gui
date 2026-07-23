@@ -87,6 +87,18 @@ export function shouldSuppressHeaterError(errorCode, rawAlarm = '') {
   return true;
 }
 
+/** Relay the EFFECTIVE alarm to downstream consumers (e.g. the remote viewer, which has no local
+    heater-installed config): when a heater alarm is being suppressed, clear its error while keeping
+    any op-status prefix, so the phone shows the same "no active alarm" the main GUI shows. Real,
+    non-suppressed alarms pass through unchanged. */
+export function relayAlarmStatus(rawAlarm) {
+  const raw = String(rawAlarm ?? '');
+  if (!raw || raw.endsWith('NO_ERROR')) return raw;
+  if (!shouldSuppressHeaterError('', raw)) return raw;
+  const dash = raw.indexOf('-');
+  return dash > 0 ? `${raw.slice(0, dash)}-NO_ERROR` : 'NO_ERROR';
+}
+
 /** Give the operator the live evidence behind a generic heater/HTC alarm. */
 export function describeHeaterFault(data = store.data) {
   const readings = [

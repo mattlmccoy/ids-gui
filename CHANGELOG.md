@@ -25,6 +25,11 @@ also shown in-app via the header **What's new** dropdown (see `js/changelog.js`)
   evidence chart update in place).
 - A heater/HTC alarm from a channel marked not-installed is reliably suppressed and no longer blocks
   the guided commissioning tests.
+- The pressure tile is labeled "not measured in R17" (the NANO 700 has no pressure sensor) so its 0
+  reading is not mistaken for a fault.
+- The remote viewer no longer shows a heater alarm that is suppressed on the main dashboard, and it now
+  shows only the live machine — older/stale device records collapse behind a toggle, and the card is
+  status-first with pump/valve/float detail behind a "Show details" toggle.
 
 ## 2026-07-22
 
