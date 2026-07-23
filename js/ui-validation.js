@@ -9,6 +9,15 @@ import {
 } from './commissioning-automation.js';
 import { sendRemoteTestAlert } from './notifications.js';
 import { formatCountdown } from './mode-control.js';
+import { shouldSuppressHeaterError } from './heater-visibility.js';
+
+// A firmware alarm that is being suppressed (attributable to a heater channel the operator
+// marked not-installed) must not block commissioning — mirror the Operation error-card logic.
+function alarmIsBlocking(data = store.data) {
+  if (!hasActiveAlarm(data)) return false;
+  const raw = String(data?.AlarmStatus ?? data?.ErrorCode_STATE ?? '');
+  return !shouldSuppressHeaterError('', raw);
+}
 
 const STORAGE_KEY = 'ids-lab-certification-v2';
 const OBSERVATION_SECONDS = 10;
@@ -19,7 +28,7 @@ const TESTS = [
   { id: 'telemetry-stream', category: 'Connection', label: 'Stable telemetry', instruction: `Remain connected for ${OBSERVATION_SECONDS} seconds while the analyzer checks continuity.`, kind: 'telemetry', auto: true },
   ...FLOATS.map(item => binary(
     `float-${item.key}`, 'Floats', item.label,
-    `Move the ${item.label} float fully DOWN and UP. The analyzer records both states; confirm the physical direction matches the displayed direction.`,
+    `Floats trigger automatically during operation, and overflow floats should never trip in normal use — do not force them. Confirm the displayed ${item.label} state matches the physical switch, then mark this check (or Skip it).`,
     item.key, true, item.key
   )),
   ...[
@@ -144,6 +153,7 @@ function bindEvents(panel) {
     if (action === 'previous') navigateTo(Math.max(0, state.currentIndex - 1));
     if (action === 'next') navigateTo(Math.min(TESTS.length - 1, state.currentIndex + 1));
     if (action === 'pass' || action === 'fail' || action === 'na') setResult(TESTS[state.currentIndex], action, 'operator');
+    if (action === 'skip') setResult(TESTS[state.currentIndex], 'na', 'operator', 'Skipped by operator');
     if (action === 'finish') finishCertification();
     saveState();
     render(panel);
@@ -221,7 +231,7 @@ function markServiced(panel) {
 }
 
 function observeData(panel, data) {
-  if (automation.status === 'running' && hasActiveAlarm(data)) {
+  if (automation.status === 'running' && alarmIsBlocking(data)) {
     stopAutomation(`Firmware alarm became active (${data.AlarmStatus ?? data.ErrorCode_STATE})`);
   }
   if (state.status !== 'running') return;
@@ -318,6 +328,13 @@ function analyze(test) {
   }
   if (test.kind === 'binary') {
     const seen = state.observed[test.key] || [];
+    if (test.floatKey || FLOAT_KEYS.has(test.key)) {
+      // Floats actuate during operation and overflow floats should never be forced, so we do not
+      // require both OFF and ON readbacks. Confirm the current displayed state once telemetry is seen.
+      return seen.length
+        ? { status: 'confirm', message: `Float readback present (${formatFloatState(test.key, store.data?.[test.key])}). Confirm it matches the physical switch, or Skip.` }
+        : { status: 'waiting', message: 'Waiting for a float readback from the controller.' };
+    }
     const complete = seen.includes('0') && seen.includes('1');
     return complete
       ? { status: test.physical ? 'confirm' : 'pass', message: 'Both OFF (0) and ON (1) readbacks observed. Confirm physical behavior.' }
@@ -384,7 +401,7 @@ function automationReady(test) {
   const alarmKnown = store.data.AlarmStatus !== undefined || store.data.ErrorCode_STATE !== undefined;
   const numbersValid = inRange(c.dwellSeconds, 2, 30) && (definition.key !== 'vacuum'
     || (inRange(c.vacuumSetpoint, 0, 100) && inRange(c.flowSetpoint, 0, 100) && inRange(c.minimumVacuumChange, 0, 500)));
-  return store.connection === 'CONNECTED' && alarmKnown && !store.replayActive && !hasActiveAlarm(store.data) && numbersValid
+  return store.connection === 'CONNECTED' && alarmKnown && !store.replayActive && !alarmIsBlocking(store.data) && numbersValid
     && c.plumbingReady && c.estopReady && c.fluidReady && c.permission;
 }
 
@@ -488,7 +505,7 @@ async function waitForFlushCircuit(test) {
 function assertAutomationSafe() {
   if (automation.abort) throw new Error('Automation stopped; all operating modes were commanded OFF.');
   if (store.connection !== 'CONNECTED') throw new Error('Controller disconnected; shutdown commands may not have reached the hardware. Verify locally.');
-  if (hasActiveAlarm(store.data)) throw new Error(`Firmware alarm became active (${store.data.AlarmStatus ?? store.data.ErrorCode_STATE}); sequence stopped.`);
+  if (alarmIsBlocking(store.data)) throw new Error(`Firmware alarm became active (${store.data.AlarmStatus ?? store.data.ErrorCode_STATE}); sequence stopped.`);
 }
 
 async function sendRequired(command) {
@@ -571,7 +588,7 @@ function renderIntegratedAutomation(test) {
   const isThisTest = automation.testId === test.id;
   const connected = store.connection === 'CONNECTED';
   const alarmKnown = store.data.AlarmStatus !== undefined || store.data.ErrorCode_STATE !== undefined;
-  const alarmClear = alarmKnown && !hasActiveAlarm(store.data);
+  const alarmClear = alarmKnown && !alarmIsBlocking(store.data);
   const shownStatus = isThisTest ? automation.status : 'idle';
   return `<section class="commission-runner ${shownStatus}" aria-label="Integrated automated test">
     <div class="d-flex justify-content-between align-items-center mb-3"><div><div class="small text-uppercase text-muted">Guided automation</div><div class="h5 mb-0">${escapeHtml(definition.label)}</div></div><div class="d-flex align-items-center gap-2">${running && automation.deadlineAt ? `<span class="mini-countdown"><i class="bi bi-clock"></i>${escapeHtml(automation.countdownLabel)} ${formatCountdown(automation.deadlineAt - Date.now())}</span>` : ''}<span class="commission-status ${shownStatus}"><i class="bi ${shownStatus === 'complete' ? 'bi-check-circle-fill' : shownStatus === 'failed' ? 'bi-x-circle-fill' : shownStatus === 'running' ? 'bi-activity' : 'bi-cpu'}"></i>${escapeHtml(shownStatus)}</span></div></div>
@@ -705,6 +722,7 @@ function render(panel) {
             <div class="d-flex flex-wrap gap-2">
               <button class="btn btn-outline-secondary" data-validation-action="previous" ${state.currentIndex === 0 || automationLocked ? 'disabled' : ''}>Previous</button>
               <button class="btn btn-outline-primary" data-validation-action="operation" ${automationLocked ? 'disabled' : ''}>Open Operation</button>
+              <button class="btn btn-outline-warning" data-validation-action="skip" ${automationLocked ? 'disabled' : ''} title="Skip this test and move on (recorded as not applicable)"><i class="bi bi-skip-forward me-1"></i>Skip test</button>
               <span class="flex-grow-1"></span>
               <button class="btn btn-outline-secondary" data-validation-action="na" ${automationLocked ? 'disabled' : ''}>N/A</button>
               <button class="btn btn-danger" data-validation-action="fail" ${automationLocked ? 'disabled' : ''}>Fail</button>
