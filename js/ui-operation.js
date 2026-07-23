@@ -15,7 +15,7 @@ import {
 } from './mode-control.js';
 import { downloadDiagnosticBundle } from './diagnostics.js';
 import { syncExperienceControls } from './experience-mode.js';
-import { calculateDualPressure } from './pressure-sensing.js';
+import { calculateDualPressure, isDualPressureEnabled } from './pressure-sensing.js';
 import { stopFirmwareSimulator } from './firmware-simulator.js';
 
 /* ---------- Setpoint Definitions ---------- */
@@ -132,7 +132,7 @@ function buildHTML() {
         <span class="kpi-unit">psi</span>
         ${tachometerHTML('pressure', 'Measured', '0–100 psi')}
       </div>
-      <div class="kpi-tile kpi-dual-pressure" id="kpi-tile-dual-pressure">
+      <div class="kpi-tile kpi-dual-pressure" id="kpi-tile-dual-pressure" style="display:none">
         <span class="kpi-label">Printhead Pressures</span>
         <span class="kpi-value" id="kpi-pressure-differential">--</span>
         <span class="kpi-unit" id="kpi-pressure-ports">ΔP · sensors not configured</span>
@@ -667,6 +667,11 @@ function updateDualPressureDisplay(data) {
   const meniscus = document.getElementById('kpi-meniscus-estimate');
   const tile = document.getElementById('kpi-tile-dual-pressure');
   if (!differential || !ports || !meniscus || !tile) return;
+  if (!isDualPressureEnabled()) {
+    tile.style.display = 'none';
+    return;
+  }
+  tile.style.display = '';
   if (!result.available) {
     differential.textContent = '--';
     ports.textContent = result.reason;

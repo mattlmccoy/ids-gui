@@ -5,7 +5,7 @@ import { isDataKeyVisible } from './heater-visibility.js';
 import { getPollIntervalMs, setPollIntervalMs, getNominalPollIntervalMs } from './serial.js';
 import { FLOATS, getFloatDisplayState, formatFloatState } from './float-state.js';
 import { initTrendHistory, persistTrendPoint, clearTrendHistory } from './trend-history.js';
-import { calculateDualPressure } from './pressure-sensing.js';
+import { calculateDualPressure, filterActivePressureTraces } from './pressure-sensing.js';
 
 const MAX_POINTS = 18_000; // one hour at the fastest supported 200 ms poll rate
 const STATE_TRACKS_KEY = 'ids-visible-state-tracks-v1';
@@ -62,6 +62,8 @@ let stateChart = null;
 let paused = false;
 let windowMs = TIME_WINDOWS[1].ms;
 let maxObservedPressure = 0;
+// Pressure traces actually shown: the derived dual-pressure series are dropped while the feature is disabled.
+let activePressureTraces = filterActivePressureTraces(PRESSURE_TRACES);
 let visibleStateKeys = readStateTrackPreference();
 let replaySamples = [];
 let replayTimer = null;
@@ -78,6 +80,7 @@ export function initChartsTab() {
     refreshCharts();
   });
   store.on('replay', updateReplayControls);
+  store.on('pressure-sensing-config', rebuildPressureTraces);
   initTrendHistory().then(samples => {
     if (!samples.length || dataBuffer.length) return;
     dataBuffer = samples.slice(-MAX_POINTS);
@@ -239,11 +242,7 @@ function createCharts() {
   pressureChart = new Chart(document.getElementById('chart-pressure'), {
     type: 'line',
     data: {
-      datasets: PRESSURE_TRACES.map(t => ({
-        label: t.label, borderColor: t.color, backgroundColor: t.color + '15',
-        borderWidth: 1.5, borderDash: t.borderDash || [], pointRadius: 0, tension: 0.3, data: [],
-        yAxisID: t.yAxisID || 'y'
-      }))
+      datasets: activePressureTraces.map(pressureDataset)
     },
     options: {
       ...commonOpts,
@@ -387,6 +386,22 @@ function bindEvents() {
   }));
 }
 
+function pressureDataset(t) {
+  return {
+    label: t.label, borderColor: t.color, backgroundColor: t.color + '15',
+    borderWidth: 1.5, borderDash: t.borderDash || [], pointRadius: 0, tension: 0.3, data: [],
+    yAxisID: t.yAxisID || 'y'
+  };
+}
+
+// Rebuild the pressure chart's dataset set (and legend) when the dual-pressure feature is toggled.
+function rebuildPressureTraces() {
+  activePressureTraces = filterActivePressureTraces(PRESSURE_TRACES);
+  if (!pressureChart) return;
+  pressureChart.data.datasets = activePressureTraces.map(pressureDataset);
+  refreshCharts();
+}
+
 function onData(data) {
   updateFloatStatus(data);
   if (paused) return;
@@ -401,7 +416,7 @@ function onData(data) {
   const p = parseFloat(data.Pressure_STATE);
   if (Number.isFinite(p)) maxObservedPressure = Math.max(maxObservedPressure, p);
   let hasValue = false;
-  for (const t of [...TEMP_TRACES, ...PRESSURE_TRACES]) {
+  for (const t of [...TEMP_TRACES, ...activePressureTraces]) {
     if (!isDataKeyVisible(t.key)) continue;
     if (data[t.key] !== undefined) {
       point[t.key] = parseFloat(data[t.key]);
@@ -433,7 +448,7 @@ function refreshCharts() {
   });
   tempChart.update('none');
 
-  PRESSURE_TRACES.forEach((t, i) => {
+  activePressureTraces.forEach((t, i) => {
     pressureChart.data.datasets[i].hidden = !isDataKeyVisible(t.key);
     pressureChart.data.datasets[i].data = visible.filter(p => p[t.key] !== undefined).map(p => ({ x: p.timestamp, y: p[t.key] }));
   });
