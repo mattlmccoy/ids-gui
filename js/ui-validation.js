@@ -94,6 +94,8 @@ let state = loadState();
 let renderTimer = null;
 let automation = createAutomationState();
 let evidenceChart = null;
+let evidenceChartTestId = null;
+let lastRenderSig = null;
 const liveSeries = new Map();
 
 export function initValidationTab() {
@@ -111,7 +113,7 @@ export function initValidationTab() {
   render(panel);
   renderTimer = setInterval(() => {
     if (state.status === 'running') analyzeAll();
-    render(panel);
+    tick(panel);
   }, 1000);
   window.addEventListener('beforeunload', () => {
     clearInterval(renderTimer);
@@ -271,7 +273,56 @@ function observeData(panel, data) {
   state.softwareRev = data.SoftwareRev || state.softwareRev;
   analyzeAll();
   saveState();
-  render(panel);
+  tick(panel);
+}
+
+// Periodic refresh: only rebuild the whole panel when its structure changes; otherwise patch the
+// handful of live-updating regions in place. Full innerHTML rebuilds every second caused the
+// commissioning page (and its evidence chart) to visibly glitch.
+function tick(panel) {
+  const root = panel.querySelector('#validation-root');
+  if (!root) return;
+  const sig = computeRenderSignature();
+  if (sig !== lastRenderSig) { render(panel); return; }
+  if (state.status === 'running') patchLiveRegions();
+}
+
+function computeRenderSignature() {
+  if (state.status !== 'running') return `status:${state.status}:${state.certificate ? 'cert' : 'none'}:${state.revalidationReason || ''}`;
+  const current = TESTS[state.currentIndex] || TESTS[0];
+  const c = automation.config || {};
+  return JSON.stringify({
+    idx: state.currentIndex,
+    testId: current.id,
+    aStatus: state.analysis[current.id]?.status || '',
+    autoStatus: automation.status,
+    autoTestId: automation.testId,
+    autoPhase: automation.phase,
+    hasCountdown: !!(automation.status === 'running' && automation.deadlineAt),
+    conn: store.connection,
+    alarmBlock: alarmIsBlocking(store.data),
+    pending: summarize().pending,
+    results: TESTS.map(t => state.results[t.id]?.result || '').join(','),
+    gate: [c.plumbingReady, c.fluidReady, c.estopReady, c.permission, c.dwellSeconds, c.vacuumSetpoint, c.flowSetpoint, c.minimumVacuumChange].join(','),
+    delivery: Object.keys(state.deliveryTests || {}).map(k => `${k}:${state.deliveryTests[k]?.status}`).join(','),
+    resultMsg: automation.resultMessage || ''
+  });
+}
+
+// In-place update of only the values that change tick-to-tick (analysis text, live readbacks,
+// countdown, evidence chart). Everything else is covered by the render signature above.
+function patchLiveRegions() {
+  const current = TESTS[state.currentIndex] || TESTS[0];
+  const analysis = state.analysis[current.id] || analyze(current);
+  const msg = document.getElementById('cx-analysis-msg');
+  if (msg && msg.textContent !== analysis.message) msg.textContent = analysis.message;
+  const readback = document.getElementById('cx-live-readback');
+  if (readback) readback.innerHTML = liveReadback(current);
+  const countdown = document.getElementById('cx-countdown');
+  if (countdown && automation.status === 'running' && automation.deadlineAt) {
+    countdown.textContent = `${automation.countdownLabel} ${formatCountdown(automation.deadlineAt - Date.now())}`;
+  }
+  drawEvidenceChart(current);
 }
 
 function observeConnection(panel, connection) {
@@ -591,7 +642,7 @@ function renderIntegratedAutomation(test) {
   const alarmClear = alarmKnown && !alarmIsBlocking(store.data);
   const shownStatus = isThisTest ? automation.status : 'idle';
   return `<section class="commission-runner ${shownStatus}" aria-label="Integrated automated test">
-    <div class="d-flex justify-content-between align-items-center mb-3"><div><div class="small text-uppercase text-muted">Guided automation</div><div class="h5 mb-0">${escapeHtml(definition.label)}</div></div><div class="d-flex align-items-center gap-2">${running && automation.deadlineAt ? `<span class="mini-countdown"><i class="bi bi-clock"></i>${escapeHtml(automation.countdownLabel)} ${formatCountdown(automation.deadlineAt - Date.now())}</span>` : ''}<span class="commission-status ${shownStatus}"><i class="bi ${shownStatus === 'complete' ? 'bi-check-circle-fill' : shownStatus === 'failed' ? 'bi-x-circle-fill' : shownStatus === 'running' ? 'bi-activity' : 'bi-cpu'}"></i>${escapeHtml(shownStatus)}</span></div></div>
+    <div class="d-flex justify-content-between align-items-center mb-3"><div><div class="small text-uppercase text-muted">Guided automation</div><div class="h5 mb-0">${escapeHtml(definition.label)}</div></div><div class="d-flex align-items-center gap-2">${running && automation.deadlineAt ? `<span class="mini-countdown" id="cx-countdown"><i class="bi bi-clock"></i>${escapeHtml(automation.countdownLabel)} ${formatCountdown(automation.deadlineAt - Date.now())}</span>` : ''}<span class="commission-status ${shownStatus}"><i class="bi ${shownStatus === 'complete' ? 'bi-check-circle-fill' : shownStatus === 'failed' ? 'bi-x-circle-fill' : shownStatus === 'running' ? 'bi-activity' : 'bi-cpu'}"></i>${escapeHtml(shownStatus)}</span></div></div>
     ${renderPhaseRail(isThisTest ? automation.phase : 'idle')}
     <div class="row g-3 mt-1"><div class="col-lg-7">${renderEvidencePanel(test, definition)}</div>
       <div class="col-lg-5"><div class="commission-gate"><div class="fw-semibold mb-2">Operator safety gate</div>
@@ -646,9 +697,11 @@ function captureLiveData(data, at) {
 }
 
 function drawEvidenceChart(test) {
-  if (evidenceChart) { evidenceChart.destroy(); evidenceChart = null; }
   const canvas = document.getElementById('commission-evidence-chart');
-  if (!canvas || !window.Chart) return;
+  if (!canvas || !window.Chart) {
+    if (evidenceChart) { evidenceChart.destroy(); evidenceChart = null; evidenceChartTestId = null; }
+    return;
+  }
   const definition = AUTOMATED_TESTS[test.id];
   const captured = definition && automation.testId === test.id && automation.samples.length;
   let labels = []; let datasets = []; let laneChart = false;
@@ -668,6 +721,14 @@ function drawEvidenceChart(test) {
     labels = samples.map(sample => `${((new Date(sample.at).getTime() - start) / 1000).toFixed(0)}s`);
     datasets = [{ label: humanizeEvidenceKey(test.key), data: samples.map(sample => sample.value), borderColor: EVIDENCE_COLORS[0], backgroundColor: 'rgba(59,130,246,.12)', fill: test.kind === 'sensor', stepped: test.kind === 'binary', tension: test.kind === 'sensor' ? 0.25 : 0, pointRadius: 0 }];
   }
+  if (evidenceChart && evidenceChart.canvas === canvas && evidenceChartTestId === test.id) {
+    evidenceChart.data.labels = labels;
+    evidenceChart.data.datasets = datasets;
+    evidenceChart.update('none');
+    return;
+  }
+  if (evidenceChart) { evidenceChart.destroy(); evidenceChart = null; }
+  evidenceChartTestId = test.id;
   evidenceChart = new Chart(canvas, { type: 'line', data: { labels, datasets }, options: { responsive: true, maintainAspectRatio: false, animation: { duration: 350 }, interaction: { intersect: false, mode: 'index' }, plugins: { legend: { labels: { color: '#aeb6ca', usePointStyle: true, boxWidth: 8 } } }, scales: { x: { grid: { color: 'rgba(148,163,184,.08)' }, ticks: { color: '#7f899f', maxTicksLimit: 7 } }, y: { min: laneChart ? -0.25 : undefined, max: laneChart ? definition.evidenceKeys.length * 1.5 : undefined, grid: { color: 'rgba(148,163,184,.1)' }, ticks: { color: '#7f899f', display: !laneChart } } } } });
 }
 
@@ -690,6 +751,7 @@ function render(panel) {
     : null;
   if (state.status !== 'running') {
     root.innerHTML = renderLanding();
+    lastRenderSig = computeRenderSignature();
     return;
   }
   analyzeAll();
@@ -709,13 +771,13 @@ function render(panel) {
     <div class="row g-3">
       <div class="col-xl-8">
         <div class="dash-card accent-blue commission-test-card">
-          <div class="card-header d-flex justify-content-between align-items-center"><span>Current test ${state.currentIndex + 1} of ${TESTS.length}</span><span class="badge ${analysisBadge(analysis.status)}">${analysisLabel(analysis.status)}</span></div>
+          <div class="card-header d-flex justify-content-between align-items-center"><span>Current test ${state.currentIndex + 1} of ${TESTS.length}</span><span class="badge ${analysisBadge(analysis.status)}" id="cx-analysis-badge">${analysisLabel(analysis.status)}</span></div>
           <div class="card-body p-4">
             <div class="small text-primary text-uppercase fw-semibold">${escapeHtml(current.category)}</div>
             <h2 class="h4 mt-1">${escapeHtml(current.label)}</h2>
             <p>${escapeHtml(current.instruction)}</p>
             ${current.physical ? '<div class="alert alert-danger py-2 small"><strong>Physical confirmation required.</strong> A readback change alone does not prove the component moved or the plumbing response is correct.</div>' : ''}
-            <div class="border rounded p-3 mb-3"><div class="small text-muted">Automatic analysis</div><div class="fw-semibold">${escapeHtml(analysis.message)}</div>${liveReadback(current)}</div>
+            <div class="border rounded p-3 mb-3"><div class="small text-muted">Automatic analysis</div><div class="fw-semibold" id="cx-analysis-msg">${escapeHtml(analysis.message)}</div><div id="cx-live-readback">${liveReadback(current)}</div></div>
             ${renderIntegratedAutomation(current)}
             <label class="form-label small" for="validation-note">Observation / issue</label>
             <textarea id="validation-note" class="form-control mb-3" rows="2">${escapeHtml(result?.note || '')}</textarea>
@@ -753,6 +815,7 @@ function render(panel) {
     }
   }
   requestAnimationFrame(() => drawEvidenceChart(current));
+  lastRenderSig = computeRenderSignature();
 }
 
 function renderLanding() {
