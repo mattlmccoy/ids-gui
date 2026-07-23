@@ -12,6 +12,7 @@ import { initChartsTab } from './ui-charts.js';
 import { initLogTab } from './ui-log.js';
 import { initInkTab } from './ui-ink.js';
 import { initValidationTab } from './ui-validation.js';
+import { initDebugTab } from './ui-debug.js';
 import { initCSVExport, exportSessionCSV } from './csv-export.js';
 import { initNotifications } from './notifications.js';
 import { initRemoteControl } from './remote-control.js';
@@ -48,6 +49,7 @@ function boot() {
   initSettingsTab();
   initChartsTab();
   initLogTab();
+  initDebugTab();
   initInkTab();
   initValidationTab();
   initCSVExport();

@@ -21,6 +21,7 @@ const monitor = read('js/ui-monitor.js');
 const settings = read('js/ui-settings.js');
 const charts = read('js/ui-charts.js');
 const validation = read('js/ui-validation.js');
+const debug = read('js/ui-debug.js');
 const ink = read('js/ui-ink.js');
 const modeControl = read('js/mode-control.js');
 const pagesWorkflow = read('.github/workflows/deploy-pages.yml');
@@ -82,6 +83,11 @@ for (const marker of ['automationReady', 'safeShutdownCommands', 'Stop & command
   if (!validation.includes(marker)) throw new Error(`Automated commissioning runner is missing ${marker}`);
 }
 if (!validation.includes('Finish certification')) throw new Error('Lab validation certification workflow is missing');
+if (!indexHtml.includes('panel-debug') || !read('js/app.js').includes('initDebugTab')) throw new Error('Debug page is not wired into the application');
+for (const marker of ['Conceptual plumbing map', 'data-map-preview', 'debug-telemetry-body', 'Advanced raw command', 'downloadDiagnosticBundle']) {
+  if (!debug.includes(marker)) throw new Error(`Debug page is missing ${marker}`);
+}
+if (operation.includes('ACK OFF') || operation.includes('ACK ON')) throw new Error('Operation page still exposes engineering ACK terminology');
 if (!ink.includes('defaultSampleVolumeUl: 1000')) throw new Error('Ink checker sample default is not 1 mL');
 if (!ink.includes('Calibration required:')) throw new Error('Ink checker calibration warning is missing');
 if (!ink.includes('interpolateCalibration')) throw new Error('Ink checker empirical calibration model is missing');

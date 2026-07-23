@@ -147,6 +147,10 @@ See `CHANGELOG.md` for full release notes.
   overlapping Purge/Flush/Drain requests, warns continuously for persistent Bypass, and
   includes a verified controlled **All Modes Off** action. Compact clock badges show active
   fixed-duration waits without blocking the page.
+- Engineering detail has moved to a dedicated Debug page. It includes a first-pass animated
+  plumbing map with safe disconnected previews, filterable raw telemetry, findings, command
+  history, guarded raw JSON, and diagnostic export. Dashed pipes are intentionally unverified
+  until the actual machine plumbing is traced.
 - A one-click diagnostic bundle exports recent telemetry and command history without remote
   alert secrets. `Flow_SETPOINT` is labeled **Recirculation Drive** because it is not measured
   flow in R17.
@@ -163,7 +167,7 @@ See `CHANGELOG.md` for full release notes.
   at a time, automatically analyzes identity, telemetry, binary readbacks, sensors, alarm and
   disconnect lifecycles, and requires explicit human confirmation for physical behavior.
 - Navigation follows the normal lifecycle: Operation, Trends, Live I/O, Ink Check, Event Log,
-  Settings, then infrequent Commissioning.
+  Debug, Settings, then infrequent Commissioning.
 - `HTC`, `HTC_ERROR`, and error bit `8192` are decoded as a heater thermocouple input fault;
   live Main/Aux readings identify the affected channel and explain the 999 °C fault sentinel.
 - Settings has persistent **Main heater installed** and **AUX heater installed** switches. For

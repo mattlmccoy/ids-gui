@@ -121,7 +121,7 @@ function buildHTML() {
         <span class="kpi-value" id="kpi-status" style="font-size:1rem;color:var(--text-muted)">--</span>
         <span class="kpi-unit" id="kpi-error-code">&nbsp;</span>
       </div>
-      <div class="kpi-tile kpi-error" id="kpi-error-card">
+      <div class="kpi-tile kpi-error d-none" id="kpi-error-card">
         <span class="kpi-label">Active Error</span>
         <span class="kpi-value" id="kpi-error-title" style="font-size:0.95rem;color:var(--text-muted)">--</span>
         <span class="kpi-unit" id="kpi-error-detail">&nbsp;</span>
@@ -165,42 +165,30 @@ function buildHTML() {
               <div class="d-flex gap-1">
                 <button class="btn-control btn-mode-on" id="btn-purge-on" disabled>Purge ON</button>
                 <button class="btn-control btn-mode-off" id="btn-purge-off" disabled>OFF</button>
-                <span class="mode-ack" id="ack-Purge_MODE">READBACK —</span>
+                <span class="mode-ack d-none" id="ack-Purge_MODE"></span>
               </div>
               <div class="d-flex gap-1">
                 <button class="btn-control btn-mode-on" id="btn-flush-on" disabled>Flush ON</button>
                 <button class="btn-control btn-mode-off" id="btn-flush-off" disabled>OFF</button>
-                <span class="mode-ack" id="ack-Flush_MODE">READBACK —</span>
+                <span class="mode-ack d-none" id="ack-Flush_MODE"></span>
               </div>
               <div class="d-flex gap-1">
                 <button class="btn-control btn-mode-on" id="btn-drain-on" disabled>Drain ON</button>
                 <button class="btn-control btn-mode-off" id="btn-drain-off" disabled>OFF</button>
-                <span class="mode-ack" id="ack-Drain_MODE">READBACK —</span>
+                <span class="mode-ack d-none" id="ack-Drain_MODE"></span>
               </div>
               <span style="width:1px;background:var(--border-color)"></span>
               <div class="d-flex gap-1">
                 <button class="btn-control btn-mode-on" id="btn-bypass-on" disabled>Bypass</button>
                 <button class="btn-control btn-mode-off" id="btn-bypass-off" disabled>OFF</button>
-                <span class="mode-ack" id="ack-Bypass_MODE">READBACK —</span>
+                <span class="mode-ack d-none" id="ack-Bypass_MODE"></span>
               </div>
             </div>
-            <div class="mode-command-status mt-3" id="mode-command-status" role="status">Controller readback determines the displayed state.</div>
+            <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap mt-3">
+              <div class="mode-command-status" id="mode-command-status" role="status">Buttons reflect live controller state.</div>
+              <button class="btn btn-sm btn-outline-info" id="btn-open-system-map"><i class="bi bi-diagram-3 me-1"></i>System map & mode guide</button>
+            </div>
             <div class="alert alert-warning py-2 mt-3 mb-0 d-none" id="bypass-active-warning"><strong>Bypass is active.</strong> It can remain open during Run and has no firmware timeout.</div>
-          </div>
-        </div>
-
-        <div class="dash-card accent-cyan mb-3">
-          <div class="card-header"><i class="bi bi-signpost-split me-1"></i> Operating mode guide <span class="badge text-bg-warning ms-1">R17</span></div>
-          <div class="card-body">
-            <p class="small text-muted mb-3">The output list below is verified from the compiled R17 firmware. Fluid destinations remain unverified until they are matched to the machine plumbing. A controller readback does not prove physical flow.</p>
-            <div class="mode-guide-grid">${Object.entries(MODE_DEFINITIONS).map(([key, item]) => `
-              <article class="mode-guide-card" id="guide-${key}">
-                <div class="d-flex justify-content-between align-items-center"><strong>${item.label}</strong><span class="mode-guide-live">OFF</span></div>
-                <p>${item.purpose}</p>
-                <div class="mode-output-flow">${item.outputs.map(output => `<span>${output}</span>`).join('<i class="bi bi-arrow-right"></i>')}</div>
-                <div class="small"><strong>Use:</strong> ${item.use}</div>
-                <div class="mode-guide-warning"><i class="bi bi-exclamation-triangle"></i>${item.warning}</div>
-              </article>`).join('')}</div>
           </div>
         </div>
 
@@ -350,11 +338,15 @@ function bindEvents() {
 
   document.getElementById('btn-connect').addEventListener('click', () => serialConnect());
   document.getElementById('btn-disconnect').addEventListener('click', () => serialDisconnect());
+  document.getElementById('btn-open-system-map')?.addEventListener('click', () => {
+    const trigger = document.getElementById('tab-debug');
+    if (trigger) bootstrap.Tab.getOrCreateInstance(trigger).show();
+  });
 
   document.getElementById('btn-run').addEventListener('click', async () => {
     const maintenance = activeMaintenanceMode(store.data);
     if (maintenance) {
-      setModeStatusMessage(`Run blocked: ${MODE_DEFINITIONS[maintenance].label} is active. Turn it OFF and wait for acknowledgement first.`);
+      setModeStatusMessage(`Run blocked: ${MODE_DEFINITIONS[maintenance].label} is active. Turn it off and wait for controller confirmation first.`);
       return;
     }
     if (await CONFIRMATIONS.run()) requestMode('Run_MODE', 1, 'Run requested');
@@ -637,6 +629,7 @@ function updateErrorCard(raw) {
   const isDismissed = dismissedAlarmRaw && raw === dismissedAlarmRaw;
   const isSuppressed = shouldSuppressHeaterError(error.code, raw);
   if (isActiveError(error.code) && !isSuppressed && !isDismissed) {
+    if (kpiErrorCard) kpiErrorCard.classList.remove('d-none');
     kpiError.textContent = error.code;
     kpiError.style.color = 'var(--accent-red)';
     if (kpiErrorTitle) kpiErrorTitle.textContent = `${error.code} \u2014 ${error.title}`;
@@ -659,6 +652,7 @@ function updateErrorCard(raw) {
     if (kpiErrorCard) {
       kpiErrorCard.classList.remove('severity-info', 'severity-warning', 'severity-critical');
       kpiErrorCard.classList.add('severity-ok');
+      kpiErrorCard.classList.add('d-none');
     }
     if (dismissBtn) dismissBtn.disabled = true;
   }
@@ -726,7 +720,7 @@ function applyModeButtons(modeKey, data = null) {
   const value = data && data[modeKey] !== undefined ? data[modeKey] : store.data?.[modeKey];
   if (value === undefined) return;
   const isOn = parseInt(value) === 1;
-  if (modeKey !== 'Run_MODE' && !pendingModes.has(modeKey)) updateAcknowledgement(modeKey, isOn ? 'ACK ON' : 'ACK OFF', 'ack');
+  if (modeKey !== 'Run_MODE' && !pendingModes.has(modeKey)) updateCommandFeedback(modeKey, 'confirmed');
 
   // Highlight the active selection (ON or OFF)
   if (isOn) {
@@ -754,7 +748,7 @@ function maintenanceModeAllowed(key) {
   }
   const pending = MAINTENANCE_MODE_KEYS.find(modeKey => modeKey !== key && pendingModes.has(modeKey) && pendingModes.get(modeKey).value === 1);
   if (pending) {
-    setModeStatusMessage(`${MODE_DEFINITIONS[key].label} blocked while ${MODE_DEFINITIONS[pending].label} is awaiting acknowledgement.`);
+    setModeStatusMessage(`${MODE_DEFINITIONS[key].label} blocked while ${MODE_DEFINITIONS[pending].label} is waiting for controller confirmation.`);
     return false;
   }
   return true;
@@ -772,9 +766,9 @@ async function requestMode(key, value, message) {
   setTimeout(() => {
     if (pendingModes.get(key) === pending) reconcilePendingModes(store.data);
   }, 8100);
-  setModeStatusMessage(`${message}. Waiting for controller acknowledgement…`);
+  setModeStatusMessage(`${message}. Waiting for controller confirmation…`);
   store.log('command', message);
-  updateAcknowledgement(key, 'REQUESTED', 'pending');
+  updateCommandFeedback(key, 'pending');
   applyModeInterlocks();
   return true;
 }
@@ -795,9 +789,9 @@ async function commandAllModesOff() {
     setTimeout(() => {
       if (pendingModes.get(key) === pending) reconcilePendingModes(store.data);
     }, 8100);
-    if (key !== 'Run_MODE') updateAcknowledgement(key, 'REQUESTED OFF', 'pending');
+    if (key !== 'Run_MODE') updateCommandFeedback(key, 'pending');
   }
-  setModeStatusMessage('All Modes Off sent. Waiting for five controller readbacks…');
+  setModeStatusMessage('All Modes Off sent. Waiting for the controller to confirm all five modes are off…');
   startCompactCountdown('All modes OFF verification', 8, 'all-off');
   store.log('command', 'All operating modes commanded OFF');
 }
@@ -806,33 +800,30 @@ function reconcilePendingModes(data) {
   for (const [key, pending] of [...pendingModes]) {
     if (dataSequence > pending.sequence && modeReadbackMatches(data, key, pending.value)) {
       pendingModes.delete(key);
-      if (key !== 'Run_MODE') updateAcknowledgement(key, pending.value ? 'ACK ON' : 'ACK OFF', 'ack');
-      setModeStatusMessage(`${key.replace('_MODE', '')} controller readback acknowledged ${pending.value ? 'ON' : 'OFF'}.`);
+      if (key !== 'Run_MODE') updateCommandFeedback(key, 'confirmed');
+      setModeStatusMessage(`${key.replace('_MODE', '')} is confirmed ${pending.value ? 'on' : 'off'}.`);
     } else if (Date.now() - pending.at > 8000) {
       pendingModes.delete(key);
-      if (key !== 'Run_MODE') updateAcknowledgement(key, 'NO ACK', 'failed');
-      setModeStatusMessage(`${key.replace('_MODE', '')} was not acknowledged within 8 seconds. Verify locally.`);
-      store.log('warning', `${key} command was not acknowledged`);
+      if (key !== 'Run_MODE') updateCommandFeedback(key, 'failed');
+      setModeStatusMessage(`${key.replace('_MODE', '')} was not confirmed within 8 seconds. Verify locally.`);
+      store.log('warning', `${key} command was not confirmed`);
     }
   }
 }
 
-function updateAcknowledgement(key, label, state) {
+function updateCommandFeedback(key, state) {
   const el = document.getElementById(`ack-${key}`);
   if (!el) return;
-  el.textContent = label;
+  if (state === 'confirmed') {
+    el.textContent = '';
+    el.className = 'mode-ack d-none';
+    return;
+  }
+  el.textContent = state === 'pending' ? 'Sending…' : 'No response';
   el.className = `mode-ack ${state}`;
 }
 
 function updateModeGuide(data) {
-  for (const key of Object.keys(MODE_DEFINITIONS)) {
-    const card = document.getElementById(`guide-${key}`);
-    if (!card || data[key] === undefined) continue;
-    const active = Number(data[key]) === 1;
-    card.classList.toggle('active', active);
-    const live = card.querySelector('.mode-guide-live');
-    if (live) live.textContent = active ? 'LIVE ON' : 'OFF';
-  }
   document.getElementById('bypass-active-warning')?.classList.toggle('d-none', Number(data.Bypass_MODE) !== 1);
 }
 

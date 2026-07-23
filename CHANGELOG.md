@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 ## 2026-07-22
 
 ### Added
+- A dedicated **Debug** page with system health summaries, filterable raw telemetry,
+  automatic findings, recent command/event history, guarded raw JSON commands, and the
+  secret-free diagnostic export.
+- A first-pass animated plumbing map for Run, Purge, Flush, Drain, and Bypass. Live mode
+  highlighting follows controller state; disconnected preview buttons never send commands.
+  Unverified physical hose paths remain dashed and explicitly labeled for lab tracing.
 - Firmware-backed operating-mode guide with verified R17 output maps, prominent uncertainty
   warnings for unverified plumbing, live readback highlighting, and a persistent Bypass alert.
 - A controlled **All Modes Off** command that requests Run, Purge, Flush, Drain, and Bypass
@@ -29,6 +35,11 @@ All notable changes to this project are documented in this file.
   generation, test selection, and vacuum-response evaluation.
 
 ### Fixed
+- Removed the always-visible R17 warning grid from Operation. Detailed mode behavior and
+  limitations now live behind expandable sections on Debug.
+- Replaced unexplained `ACK ON/OFF` pills with transient **Sending…** and **No response**
+  feedback. Normal confirmed state is conveyed by the ON/OFF control itself and plain-language
+  status text.
 - Mode buttons now distinguish requested commands from firmware-acknowledged state instead of
   immediately presenting an optimistic local selection as live hardware state.
 - Purge, Flush, and Drain are mutually exclusive in the web UI; Bypass requires an explicit

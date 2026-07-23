@@ -1,8 +1,7 @@
 /* ===== ui-monitor.js — Monitor tab (categorized accordion) ===== */
 
 import store from './state.js';
-import { send } from './serial.js';
-import { humanizeKey, unitForKey, flashSentButton } from './utils.js';
+import { humanizeKey, unitForKey } from './utils.js';
 import { FLOATS, formatFloatState } from './float-state.js';
 
 const FLOAT_KEYS = new Set(FLOATS.map(f => f.key));
@@ -76,7 +75,6 @@ const categorizedKeys = new Set(CATEGORIES.flatMap(c => c.keys));
 export function initMonitorTab() {
   const panel = document.getElementById('panel-monitor');
   panel.innerHTML = buildHTML();
-  bindEvents();
   store.on('data', updateMonitor);
   store.on('float-config', () => updateMonitor(store.data));
 }
@@ -102,8 +100,9 @@ function buildHTML() {
   `).join('');
 
   return `
+    <div class="d-flex align-items-center justify-content-between mb-2"><div class="small text-muted">Categorized controller readbacks</div><div class="small text-muted">Last update: <span id="mon-last-update" class="font-monospace text-primary">--</span></div></div>
     <div class="row g-3">
-      <div class="col-lg-8">
+      <div class="col-12">
         <div class="accordion monitor-accordion" id="monitor-accordion">
           ${accordionItems}
           <div class="accordion-item">
@@ -124,52 +123,8 @@ function buildHTML() {
           </div>
         </div>
       </div>
-      <div class="col-lg-4">
-        <div class="dash-card accent-cyan mb-3">
-          <div class="card-header"><i class="bi bi-terminal me-1"></i> Raw Command</div>
-          <div class="card-body">
-            <div class="d-flex gap-2">
-              <input type="text" class="form-control form-control-sm font-monospace"
-                     id="raw-cmd-input" placeholder='{"key":"value"}'>
-              <button class="btn-control btn-connect" id="btn-raw-send" style="white-space:nowrap">Send</button>
-            </div>
-            <div class="small mt-1" style="color:var(--text-muted)">Send raw JSON to firmware</div>
-            <div id="raw-cmd-history" class="mt-2" style="max-height:200px;overflow-y:auto;font-size:0.75rem"></div>
-          </div>
-        </div>
-        <div class="dash-card">
-          <div class="card-body text-center">
-            <span style="color:var(--text-muted);font-size:0.78rem">Last Update:
-              <span id="mon-last-update" class="font-monospace" style="color:var(--accent-blue)">--</span>
-            </span>
-          </div>
-        </div>
-      </div>
     </div>
   `;
-}
-
-function bindEvents() {
-  const cmdInput = document.getElementById('raw-cmd-input');
-  const btnSend = document.getElementById('btn-raw-send');
-
-  function sendRaw() {
-    const val = cmdInput.value.trim();
-    if (!val) return;
-    send(val);
-    store.log('command', `Raw: ${val}`);
-    flashSentButton(btnSend, 'Send');
-    const hist = document.getElementById('raw-cmd-history');
-    const div = document.createElement('div');
-    div.style.color = 'var(--text-muted)';
-    div.textContent = `> ${val}`;
-    hist.prepend(div);
-    if (hist.children.length > 20) hist.lastElementChild.remove();
-    cmdInput.value = '';
-  }
-
-  btnSend.addEventListener('click', sendRaw);
-  cmdInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendRaw(); });
 }
 
 function updateMonitor(data) {

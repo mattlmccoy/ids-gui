@@ -41,6 +41,14 @@ export function downloadDiagnosticBundle() {
   store.log('info', `Diagnostic bundle exported (${frames.length} telemetry frames, ${events.length} events)`);
 }
 
+export function getDiagnosticSnapshot() {
+  return {
+    frames: frames.map(frame => ({ at: frame.at, values: { ...frame.values } })),
+    events: events.map(event => ({ ...event })),
+    findings: analyzeTelemetry(frames)
+  };
+}
+
 export function analyzeTelemetry(samples) {
   const findings = [];
   if (!samples.length) return ['No telemetry captured in this browser session.'];

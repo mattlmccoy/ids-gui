@@ -121,6 +121,13 @@
         </button>
       </li>
       <li class="nav-item" role="presentation">
+        <button class="nav-link" id="tab-debug" data-bs-toggle="tab"
+                data-bs-target="#panel-debug" type="button" role="tab"
+                aria-controls="panel-debug" aria-selected="false">
+          <i class="bi bi-wrench-adjustable-circle me-1"></i>Debug
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
         <button class="nav-link" id="tab-settings" data-bs-toggle="tab"
                 data-bs-target="#panel-settings" type="button" role="tab"
                 aria-controls="panel-settings" aria-selected="false">
@@ -167,6 +174,12 @@
       <div class="tab-pane fade" id="panel-log" role="tabpanel"
            aria-labelledby="tab-log">
         <!-- Populated by ui-log.js -->
+      </div>
+
+      <!-- Engineering diagnostics and system map -->
+      <div class="tab-pane fade" id="panel-debug" role="tabpanel"
+           aria-labelledby="tab-debug">
+        <!-- Populated by ui-debug.js -->
       </div>
 
       <!-- Ink Concentration Tab -->
