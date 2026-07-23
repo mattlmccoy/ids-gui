@@ -137,6 +137,7 @@ function bindEvents(panel) {
     const action = event.target.closest('[data-validation-action]')?.dataset.validationAction;
     if (!action) return;
     if (action === 'start') return startSession(panel, false);
+    if (action === 'restart') return restartSession(panel);
     if (action === 'service') return markServiced(panel);
     if (action === 'export') return downloadReport();
     if (action === 'operation') return showOperationTab();
@@ -188,6 +189,21 @@ function startSession(panel, serviced) {
   if (store.connection === 'CONNECTED') observeConnection(panel, 'CONNECTED');
   render(panel);
   saveState();
+}
+
+// Always-available escape hatch: fully reset commissioning to the landing page, even if
+// automation is running or stuck (every other control is disabled while automationLocked).
+function restartSession(panel) {
+  if (!window.confirm('Restart commissioning from the beginning? This stops any running automation and discards the current session.')) return;
+  automation.abort = true;              // signal any in-flight automation loop to bail out
+  safeShutdown().catch(() => {});        // best-effort: command all modes OFF, never blocks the reset
+  automation = createAutomationState();  // release the UI lock immediately, even if automation was stuck
+  const previousMeta = state.meta || {};
+  state = createState();                 // return to the landing page (status 'idle')
+  state.meta = previousMeta;             // keep tester / machine-location entries
+  liveSeries.clear();
+  saveState();                           // overwrite any stuck persisted 'running' state
+  render(panel);
 }
 
 function markServiced(panel) {
@@ -668,8 +684,11 @@ function render(panel) {
   const automationLocked = automation.status === 'running';
   const guidedAutomation = !!AUTOMATED_TESTS[current.id];
   root.innerHTML = `
-    <div class="alert alert-warning"><strong><i class="bi bi-exclamation-triangle-fill me-1"></i>Commissioning mode:</strong>
+    <div class="alert alert-warning d-flex justify-content-between align-items-start gap-3">
+      <div><strong><i class="bi bi-exclamation-triangle-fill me-1"></i>Commissioning mode:</strong>
       the guided workflow introduces automation only at the relevant test. Hardware actuation remains gated by the local operator, and controller readback never proves physical safety.</div>
+      <button class="btn btn-sm btn-outline-danger flex-shrink-0" data-validation-action="restart"><i class="bi bi-arrow-counterclockwise me-1"></i>Start over</button>
+    </div>
     <div class="row g-3">
       <div class="col-xl-8">
         <div class="dash-card accent-blue commission-test-card">
