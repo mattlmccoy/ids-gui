@@ -6,9 +6,17 @@ import { getPollIntervalMs, setPollIntervalMs, getNominalPollIntervalMs } from '
 import { FLOATS, getFloatDisplayState, formatFloatState } from './float-state.js';
 import { initTrendHistory, persistTrendPoint, clearTrendHistory } from './trend-history.js';
 import { calculateDualPressure, filterActivePressureTraces } from './pressure-sensing.js';
+import { CHART_IDS, normalizeVisibleCharts } from './chart-visibility.js';
 
 const MAX_POINTS = 18_000; // one hour at the fastest supported 200 ms poll rate
 const STATE_TRACKS_KEY = 'ids-visible-state-tracks-v1';
+const VISIBLE_CHARTS_KEY = 'ids-visible-charts-v1';
+// Maps a logical chart id to the DOM id of its wrapping column, plus a human label for the toggle UI.
+const CHART_CARDS = [
+  { id: 'temperature', cardId: 'chart-card-temperature', label: 'Temperature' },
+  { id: 'pressure', cardId: 'chart-card-pressure', label: 'Pressure / Vacuum' },
+  { id: 'states', cardId: 'state-track-card', label: 'Floats & State' }
+];
 const TIME_WINDOWS = [
   { label: '1m',  ms: 60_000 },
   { label: '5m',  ms: 300_000 },
@@ -65,6 +73,7 @@ let maxObservedPressure = 0;
 // Pressure traces actually shown: the derived dual-pressure series are dropped while the feature is disabled.
 let activePressureTraces = filterActivePressureTraces(PRESSURE_TRACES);
 let visibleStateKeys = readStateTrackPreference();
+let visibleCharts = readVisibleChartsPreference();
 let replaySamples = [];
 let replayTimer = null;
 
@@ -72,6 +81,7 @@ export function initChartsTab() {
   const panel = document.getElementById('panel-trending');
   panel.innerHTML = buildHTML();
   createCharts();
+  applyChartVisibility();
   bindEvents();
   store.on('data', onData);
   store.on('heater-visibility', refreshCharts);
@@ -138,6 +148,15 @@ function buildHTML() {
       <button class="btn-control btn-disconnect" id="btn-poll-nominal" style="padding:0.25rem 0.6rem;font-size:0.75rem">Nominal</button>
       <span class="ms-auto" style="color:var(--text-muted);font-size:0.75rem" id="chart-point-count">0 points</span>
     </div>
+    <div class="d-flex flex-wrap gap-3 align-items-center mb-2" aria-label="Visible charts">
+      <span style="color:var(--text-secondary);font-weight:500;font-size:0.82rem"><i class="bi bi-bar-chart-line me-1"></i>Show charts:</span>
+      ${CHART_CARDS.map(c => `
+        <label class="form-check form-check-inline mb-0">
+          <input class="form-check-input chart-visibility-checkbox" type="checkbox" value="${c.id}" ${visibleCharts[c.id] ? 'checked' : ''}>
+          <span class="form-check-label small">${c.label}</span>
+        </label>
+      `).join('')}
+    </div>
     <div class="float-status-strip mb-3" aria-label="Current float switch status">
       ${FLOATS.map(f => `
         <div class="float-status-chip" id="float-status-${f.key}">
@@ -148,7 +167,7 @@ function buildHTML() {
       `).join('')}
     </div>
     <div class="row g-3">
-      <div class="col-12">
+      <div class="col-12" id="chart-card-temperature">
         <div class="dash-card accent-blue">
           <div class="card-header"><i class="bi bi-thermometer-half me-1"></i> Temperature</div>
           <div class="card-body">
@@ -156,7 +175,7 @@ function buildHTML() {
           </div>
         </div>
       </div>
-      <div class="col-12">
+      <div class="col-12" id="chart-card-pressure">
         <div class="dash-card accent-purple">
           <div class="card-header"><i class="bi bi-speedometer me-1"></i> Pressure / Vacuum</div>
           <div class="card-body">
@@ -384,6 +403,12 @@ function bindEvents() {
     refreshCharts();
     requestAnimationFrame(() => stateChart?.resize());
   }));
+  document.querySelectorAll('.chart-visibility-checkbox').forEach(input => input.addEventListener('change', () => {
+    const checked = new Set(Array.from(document.querySelectorAll('.chart-visibility-checkbox:checked')).map(el => el.value));
+    visibleCharts = normalizeVisibleCharts(Object.fromEntries(CHART_IDS.map(id => [id, checked.has(id)])));
+    persistVisibleCharts();
+    applyChartVisibility();
+  }));
 }
 
 function pressureDataset(t) {
@@ -530,6 +555,28 @@ function readStateTrackPreference() {
 
 function persistStateTrackPreference() {
   try { localStorage.setItem(STATE_TRACKS_KEY, JSON.stringify([...visibleStateKeys])); } catch (_) { /* ignore */ }
+}
+
+function readVisibleChartsPreference() {
+  try { return normalizeVisibleCharts(JSON.parse(localStorage.getItem(VISIBLE_CHARTS_KEY) || 'null')); }
+  catch (_) { return normalizeVisibleCharts(null); }
+}
+
+function persistVisibleCharts() {
+  try { localStorage.setItem(VISIBLE_CHARTS_KEY, JSON.stringify(visibleCharts)); } catch (_) { /* ignore */ }
+}
+
+// Show/hide each Trends chart card per the saved preference, then resize the ones now visible.
+function applyChartVisibility() {
+  for (const card of CHART_CARDS) {
+    const el = document.getElementById(card.cardId);
+    if (el) el.style.display = visibleCharts[card.id] ? '' : 'none';
+  }
+  requestAnimationFrame(() => {
+    if (visibleCharts.temperature) tempChart?.resize();
+    if (visibleCharts.pressure) pressureChart?.resize();
+    if (visibleCharts.states) stateChart?.resize();
+  });
 }
 
 function saveReplayFile() {
