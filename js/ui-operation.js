@@ -119,18 +119,19 @@ function buildHTML() {
         <span class="kpi-label">Aux Heater</span>
         <span class="kpi-value" id="kpi-aux-heater" style="color:var(--accent-amber)">--</span>
         <span class="kpi-unit">\u00B0C</span>
+        ${tachometerHTML('aux', 'Measured', '0 to 100 \u00B0C')}
       </div>
       <div class="kpi-tile" id="kpi-tile-vacuum">
         <span class="kpi-label">Vacuum</span>
         <span class="kpi-value" id="kpi-vacuum" style="color:var(--accent-cyan)">--</span>
         <span class="kpi-unit">cmH\u2082O</span>
         <span class="kpi-unit" id="kpi-vacuum-target-map">SP: --</span>
+        ${tachometerHTML('vacuum', 'Measured', '0 to -70 cmH₂O')}
       </div>
       <div class="kpi-tile" id="kpi-tile-pressure">
         <span class="kpi-label">Pressure</span>
         <span class="kpi-value" id="kpi-pressure" style="color:var(--accent-purple)">--</span>
         <span class="kpi-unit" title="R17 reports this field but the NANO 700 has no system pressure sensor, so it reads 0.">psi · not measured in R17</span>
-        ${tachometerHTML('pressure', 'Not measured (R17)', '0–100 psi')}
       </div>
       <div class="kpi-tile kpi-dual-pressure" id="kpi-tile-dual-pressure" style="display:none">
         <span class="kpi-label">Printhead Pressures</span>
@@ -584,10 +585,15 @@ function updateDisplay(data) {
   }
   if (data.MainHeaterTemperature_STATE !== undefined && isHeaterVisible('MainHeater'))
     document.getElementById('kpi-main-heater').textContent = parseFloat(data.MainHeaterTemperature_STATE).toFixed(1);
-  if (data.AUXHeaterTemperature_STATE !== undefined && isHeaterVisible('AuxHeater'))
+  if (data.AUXHeaterTemperature_STATE !== undefined && isHeaterVisible('AuxHeater')) {
     document.getElementById('kpi-aux-heater').textContent = parseFloat(data.AUXHeaterTemperature_STATE).toFixed(1);
-  if (data.Vacuum_STATE !== undefined)
+    updateTachometer('aux', data.AUXHeaterTemperature_STATE, 0, 100);
+  }
+  if (data.Vacuum_STATE !== undefined) {
     document.getElementById('kpi-vacuum').textContent = data.Vacuum_STATE;
+    // Vacuum is a negative value; full scale is -70 cmH₂O, so the gauge fills as it grows more negative.
+    updateTachometer('vacuum', data.Vacuum_STATE, 0, -70);
+  }
   const vacTargetEl = document.getElementById('kpi-vacuum-target-map');
   if (vacTargetEl) {
     const pct = data.Vacuum_SETPOINT;
@@ -595,8 +601,6 @@ function updateDisplay(data) {
   }
   if (data.Pressure_STATE !== undefined) {
     document.getElementById('kpi-pressure').textContent = data.Pressure_STATE;
-    const configuredMax = Number(data.PressureMAX_SETPOINT);
-    updateTachometer('pressure', data.Pressure_STATE, 0, Number.isFinite(configuredMax) && configuredMax > 0 ? configuredMax : 100);
   }
   updateDualPressureDisplay(data);
 
@@ -685,10 +689,13 @@ function updateDualPressureDisplay(data) {
   meniscus.textContent = `Estimated meniscus: ${result.estimatedMeniscusPsi.toFixed(2)} psi`;
 }
 
+const TACH_UNITS = { fluid: '°C', aux: '°C', vacuum: 'cmH₂O' };
+
 function updateTachometer(id, rawValue, min, max) {
   const el = document.getElementById(`tach-${id}`);
   const value = Number(rawValue);
-  if (!el || !Number.isFinite(value) || !Number.isFinite(max) || max <= min) return;
+  // Allow reversed ranges (e.g. vacuum 0 → -70) — only an equal min/max is invalid.
+  if (!el || !Number.isFinite(value) || !Number.isFinite(max) || max === min) return;
   const percentage = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100));
   el.style.setProperty('--tach-angle', `${-90 + percentage * 1.8}deg`);
   el.style.setProperty('--tach-fill', `${percentage} 100`);
@@ -696,9 +703,7 @@ function updateTachometer(id, rawValue, min, max) {
   el.setAttribute('aria-valuemax', String(max));
   el.setAttribute('aria-valuenow', String(value));
   const caption = el.querySelector('span');
-  if (caption) caption.textContent = id === 'pressure'
-    ? `Not measured in R17 · 0–${max} psi`
-    : `Measured · ${min}–${max} ${id === 'fluid' ? '°C' : 'psi'}`;
+  if (caption) caption.textContent = `Measured · ${min} to ${max} ${TACH_UNITS[id] || ''}`.trim();
 }
 
 function pushHistory(map, key, val) {
