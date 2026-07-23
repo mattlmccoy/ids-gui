@@ -127,6 +127,7 @@ async function readLoop() {
 
 function startPolling() {
   stopPolling();
+  send('{"GET":"ALL"}'); // immediate first poll so telemetry populates without waiting a full interval
   pollTimer = setInterval(() => {
     send('{"GET":"ALL"}');
   }, pollIntervalMs);

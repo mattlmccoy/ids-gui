@@ -123,7 +123,7 @@ function renderDevices(devices, generatedAt, commands) {
             </div>
             <div class="row g-2 align-items-end">
               ${controlInput('set_vacuum', 'Vacuum', 0, 100, data.Vacuum_SETPOINT, '%', disabled)}
-              ${controlInput('set_flow', 'Recirc drive', 0, 100, data.Flow_SETPOINT, '%', disabled)}
+              ${controlInput('set_flow', 'Recirc drive (Flow)', 0, 100, data.Flow_SETPOINT, '%', disabled)}
               ${controlInput('set_temperature', 'Fluid temp', 0, 70, data.Temperature_SETPOINT, '°C', disabled)}
             </div>
             <div class="small mt-2 remote-command-feedback ${recent?.status === 'rejected' ? 'text-danger' : 'text-muted'}">${recent ? `Latest: ${escapeHtml(commandLabel(recent.command_type))} · ${escapeHtml(recent.status)}${recent.result_message ? ` · ${escapeHtml(recent.result_message)}` : ''}` : 'No remote commands recorded.'}</div>

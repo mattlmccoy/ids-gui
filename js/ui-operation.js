@@ -21,7 +21,7 @@ import { stopFirmwareSimulator } from './firmware-simulator.js';
 /* ---------- Setpoint Definitions ---------- */
 const SETPOINTS = [
   { key: 'Vacuum_SETPOINT',    label: 'Vacuum',         min: 0, max: 100, step: 1, unit: '%' },
-  { key: 'Flow_SETPOINT',      label: 'Recirc Drive',   min: 0, max: 100, step: 1, unit: '%' },
+  { key: 'Flow_SETPOINT',      label: 'Recirc Drive (Flow)',   min: 0, max: 100, step: 1, unit: '%' },
   { key: 'Temperature_SETPOINT', label: 'Fluid Temp',   min: 0, max: 70,  step: 1, unit: '\u00B0C' },
   { key: 'TemperatureMAX_SETPOINT', label: 'Max Heater', min: 20, max: 100, step: 1, unit: '\u00B0C' },
   { key: 'InputPumpSpeed_SETPOINT', label: 'Input Pump', min: 0, max: 100, step: 1, unit: '%' },
