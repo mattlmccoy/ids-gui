@@ -776,13 +776,16 @@ function updateErrorCard(raw) {
     }
     if (dismissBtn) dismissBtn.disabled = true;
   } else if (isActiveError(error.code) && isSuppressed) {
-    kpiError.textContent = error.code;
-    kpiError.style.color = 'var(--accent-amber)';
-    if (kpiErrorTitle) { kpiErrorTitle.textContent = `Ignored unused-heater alarm — ${error.title}`; kpiErrorTitle.style.color = 'var(--accent-amber)'; }
-    if (kpiErrorDetail) kpiErrorDetail.textContent = 'The affected heater is marked unused in Settings. Confirm that hardware configuration is intentional.';
+    // A heater/HTC alarm attributable to a channel the operator marked not-installed.
+    // Render it as a calm, non-alarming note (green) so it does not block the operator,
+    // while staying honest that the controller is still reporting it.
+    kpiError.innerHTML = '&nbsp;';
+    kpiError.style.color = '';
+    if (kpiErrorTitle) { kpiErrorTitle.textContent = 'No active errors'; kpiErrorTitle.style.color = 'var(--accent-green)'; }
+    if (kpiErrorDetail) kpiErrorDetail.textContent = `Ignoring an unused-heater thermocouple alarm (channel marked not installed in Settings). ${describeHeaterFault(dataForErrorDisplay())}`;
     if (kpiErrorCard) {
-      kpiErrorCard.classList.remove('d-none', 'severity-info', 'severity-critical', 'severity-ok', 'severity-unknown');
-      kpiErrorCard.classList.add('severity-warning');
+      kpiErrorCard.classList.remove('d-none', 'severity-info', 'severity-warning', 'severity-critical', 'severity-unknown');
+      kpiErrorCard.classList.add('severity-ok');
     }
     if (dismissBtn) dismissBtn.disabled = true;
   } else {

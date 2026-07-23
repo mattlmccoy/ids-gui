@@ -74,18 +74,17 @@ export function shouldSuppressHeaterError(errorCode, rawAlarm = '') {
   if (targetsMain) return mainHidden;
   if (targetsAux) return auxHidden;
 
-  // For generic heater errors (no main/aux in code), infer likely source from live temps.
+  // Generic heater/HTC error (firmware reports no channel). At least one channel is marked
+  // not-installed here (both-installed already returned false above). Show the alarm only when
+  // an INSTALLED (enabled) channel is actually reading a fault; otherwise it is attributable to
+  // the uninstalled channel(s) and is suppressed. This keeps real faults on a live heater
+  // visible while silencing the expected fault from a channel the operator disabled.
   const mainVal = parseFloat(store.data?.MainHeaterTemperature_STATE);
   const auxVal = parseFloat(store.data?.AUXHeaterTemperature_STATE);
-  const mainBad = isHeaterTempClearlyFaulted(mainVal);
-  const auxBad = isHeaterTempClearlyFaulted(auxVal);
-
-  if (mainBad && !auxBad) return mainHidden;
-  if (auxBad && !mainBad) return auxHidden;
-  if (mainBad && auxBad) return mainHidden && auxHidden;
-
-  // Ambiguous generic heater error: be conservative and suppress only if both are hidden.
-  return mainHidden && auxHidden;
+  const mainInstalledFaulted = !mainHidden && isHeaterTempClearlyFaulted(mainVal);
+  const auxInstalledFaulted = !auxHidden && isHeaterTempClearlyFaulted(auxVal);
+  if (mainInstalledFaulted || auxInstalledFaulted) return false;
+  return true;
 }
 
 /** Give the operator the live evidence behind a generic heater/HTC alarm. */
