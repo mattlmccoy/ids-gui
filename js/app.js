@@ -219,6 +219,7 @@ function updateConnectionBadge(state) {
   const stateMap = {
     DISCONNECTED: { class: 'disconnected', text: 'Disconnected' },
     CONNECTING:   { class: 'connecting',   text: 'Connecting...' },
+    RECONNECTING: { class: 'connecting',   text: 'Reconnecting…' },
     CONNECTED:    { class: 'connected',    text: 'Connected' },
     ERROR:        { class: 'error',        text: 'Error' }
   };
