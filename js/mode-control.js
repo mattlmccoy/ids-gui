@@ -2,6 +2,12 @@
 
 export const MODE_KEYS = ['Run_MODE', 'Purge_MODE', 'Flush_MODE', 'Drain_MODE', 'Bypass_MODE'];
 export const MAINTENANCE_MODE_KEYS = ['Purge_MODE', 'Flush_MODE', 'Drain_MODE'];
+export const GUI_AUTO_OFF_DEFAULTS = {
+  Purge_MODE: 30,
+  Drain_MODE: 60,
+  Bypass_MODE: 120
+};
+export const GUI_AUTO_OFF_OPTIONS = [0, 15, 30, 60, 120, 300];
 
 export const MODE_DEFINITIONS = {
   Purge_MODE: {
@@ -50,4 +56,10 @@ export function formatCountdown(milliseconds) {
   const seconds = Math.max(0, Math.ceil(Number(milliseconds) / 1000));
   const minutes = Math.floor(seconds / 60);
   return `${minutes}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+export function normalizeAutoOffSeconds(value, fallback = 0) {
+  if (value === null || value === undefined || value === '') return fallback;
+  const parsed = Number(value);
+  return GUI_AUTO_OFF_OPTIONS.includes(parsed) ? parsed : fallback;
 }

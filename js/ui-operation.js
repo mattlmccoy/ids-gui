@@ -10,7 +10,8 @@ import { loadNominalConfig } from './nominal-config.js';
 import { FLOATS, getFloatDisplayState, formatFloatState } from './float-state.js';
 import {
   MODE_DEFINITIONS, MAINTENANCE_MODE_KEYS, activeMaintenanceMode,
-  allModesOffCommands, formatCountdown, modeReadbackMatches
+  GUI_AUTO_OFF_DEFAULTS, GUI_AUTO_OFF_OPTIONS, allModesOffCommands,
+  formatCountdown, modeReadbackMatches, normalizeAutoOffSeconds
 } from './mode-control.js';
 import { downloadDiagnosticBundle } from './diagnostics.js';
 
@@ -75,9 +76,16 @@ export function initOperationTab() {
     updateAlarmBanner({ raw: store.alarmRaw || '' });
   });
   store.on('float-config', () => updateDisplay(store.data));
+  window.addEventListener('beforeunload', event => {
+    if (!autoOffTimers.size) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
 }
 
 const pendingModes = new Map();
+const autoOffTimers = new Map();
+const guiAutoOffArmed = new Set();
 let countdownTimer = null;
 let countdownPurpose = '';
 let lastRunReadback = null;
@@ -94,6 +102,7 @@ function buildHTML() {
         <span class="kpi-label">Fluid Temp</span>
         <span class="kpi-value" id="kpi-fluid-temp" style="color:var(--accent-blue)">--</span>
         <span class="kpi-unit">\u00B0C</span>
+        ${tachometerHTML('fluid', 'Measured', '0–70 °C')}
       </div>
       <div class="kpi-tile" id="kpi-tile-main-heater">
         <span class="kpi-label">Main Heater</span>
@@ -115,16 +124,17 @@ function buildHTML() {
         <span class="kpi-label">Pressure</span>
         <span class="kpi-value" id="kpi-pressure" style="color:var(--accent-purple)">--</span>
         <span class="kpi-unit">psi</span>
+        ${tachometerHTML('pressure', 'Measured', '0–100 psi')}
       </div>
       <div class="kpi-tile" id="kpi-tile-status">
         <span class="kpi-label">Status</span>
         <span class="kpi-value" id="kpi-status" style="font-size:1rem;color:var(--text-muted)">--</span>
         <span class="kpi-unit" id="kpi-error-code">&nbsp;</span>
       </div>
-      <div class="kpi-tile kpi-error d-none" id="kpi-error-card">
+      <div class="kpi-tile kpi-error severity-unknown" id="kpi-error-card">
         <span class="kpi-label">Active Error</span>
-        <span class="kpi-value" id="kpi-error-title" style="font-size:0.95rem;color:var(--text-muted)">--</span>
-        <span class="kpi-unit" id="kpi-error-detail">&nbsp;</span>
+        <span class="kpi-value" id="kpi-error-title">Status Unknown</span>
+        <span class="kpi-unit" id="kpi-error-detail">Waiting for controller telemetry.</span>
         <button class="btn-control btn-disconnect mt-1 align-self-start" id="btn-error-dismiss" style="padding:0.2rem 0.5rem;font-size:0.72rem" disabled>Dismiss</button>
       </div>
     </div>
@@ -166,6 +176,7 @@ function buildHTML() {
                 <button class="btn-control btn-mode-on" id="btn-purge-on" disabled>Purge ON</button>
                 <button class="btn-control btn-mode-off" id="btn-purge-off" disabled>OFF</button>
                 <span class="mode-ack d-none" id="ack-Purge_MODE"></span>
+                <span class="mode-autooff d-none" id="timer-Purge_MODE"></span>
               </div>
               <div class="d-flex gap-1">
                 <button class="btn-control btn-mode-on" id="btn-flush-on" disabled>Flush ON</button>
@@ -176,18 +187,21 @@ function buildHTML() {
                 <button class="btn-control btn-mode-on" id="btn-drain-on" disabled>Drain ON</button>
                 <button class="btn-control btn-mode-off" id="btn-drain-off" disabled>OFF</button>
                 <span class="mode-ack d-none" id="ack-Drain_MODE"></span>
+                <span class="mode-autooff d-none" id="timer-Drain_MODE"></span>
               </div>
               <span style="width:1px;background:var(--border-color)"></span>
               <div class="d-flex gap-1">
                 <button class="btn-control btn-mode-on" id="btn-bypass-on" disabled>Bypass</button>
                 <button class="btn-control btn-mode-off" id="btn-bypass-off" disabled>OFF</button>
                 <span class="mode-ack d-none" id="ack-Bypass_MODE"></span>
+                <span class="mode-autooff d-none" id="timer-Bypass_MODE"></span>
               </div>
             </div>
             <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap mt-3">
               <div class="mode-command-status" id="mode-command-status" role="status">Buttons reflect live controller state.</div>
               <button class="btn btn-sm btn-outline-info" id="btn-open-system-map"><i class="bi bi-diagram-3 me-1"></i>System map & mode guide</button>
             </div>
+            ${modeHelpHTML()}
             <div class="alert alert-warning py-2 mt-3 mb-0 d-none" id="bypass-active-warning"><strong>Bypass is active.</strong> It can remain open during Run and has no firmware timeout.</div>
           </div>
         </div>
@@ -331,10 +345,50 @@ function buildHTML() {
   `;
 }
 
+function tachometerHTML(id, kind, range) {
+  return `<div class="mini-tach" id="tach-${id}" role="meter" aria-label="${kind} ${id}" aria-valuemin="0" aria-valuemax="100">
+    <svg viewBox="0 0 100 55" aria-hidden="true">
+      <path class="mini-tach-track" pathLength="100" d="M10 49 A40 40 0 0 1 90 49"></path>
+      <path class="mini-tach-fill" pathLength="100" d="M10 49 A40 40 0 0 1 90 49"></path>
+      <line class="mini-tach-needle" x1="50" y1="49" x2="50" y2="14"></line>
+      <circle cx="50" cy="49" r="3" class="mini-tach-hub"></circle>
+    </svg>
+    <span>${kind} · ${range}</span>
+  </div>`;
+}
+
+function modeHelpHTML() {
+  const timers = Object.entries(GUI_AUTO_OFF_DEFAULTS).map(([key, fallback]) => {
+    const label = MODE_DEFINITIONS[key].label;
+    const options = GUI_AUTO_OFF_OPTIONS.map(seconds => `<option value="${seconds}"${seconds === fallback ? ' selected' : ''}>${seconds ? `${seconds < 60 ? `${seconds} s` : `${seconds / 60} min`}` : 'Off'}</option>`).join('');
+    return `<label class="mode-autooff-setting"><span>${label}</span><select id="autooff-${key}" data-autooff-key="${key}" class="form-select form-select-sm">${options}</select></label>`;
+  }).join('');
+  const cards = Object.entries(MODE_DEFINITIONS).map(([key, mode]) => `
+    <article class="mode-help-card">
+      <header><strong>${mode.label}</strong><span id="mode-help-state-${key}">${Number(store.data?.[key]) === 1 ? 'ON' : 'OFF'}</span></header>
+      <p>${mode.purpose}</p>
+      <div class="mode-output-flow">${mode.outputs.map(output => `<span>${output}</span>`).join('<i class="bi bi-arrow-right"></i>')}</div>
+      <p><strong>Use when:</strong> ${mode.use}</p>
+      <small><strong>R17 behavior:</strong> ${mode.warning}</small>
+    </article>`).join('');
+  return `<details class="operation-mode-help mt-3" id="operation-mode-help">
+    <summary><i class="bi bi-question-circle"></i><span>What do these modes do?</span><small>Outputs, fluid-path intent, and R17 limitations</small></summary>
+    <div class="operation-mode-help-body">
+      <div class="mode-help-grid">${cards}</div>
+      <div class="mode-safeguard-panel">
+        <div><strong>GUI auto-off assist</strong><p>After this page commands ON and sees matching live readback, it sends OFF after the selected time.</p></div>
+        <div class="mode-autooff-settings">${timers}</div>
+        <small><i class="bi bi-shield-exclamation me-1"></i>This depends on this browser remaining open, awake, and connected. It is not a safety timer or emergency stop. Flush is excluded because R17's internal five-second timer is defective and cannot be repaired by repeated GUI commands.</small>
+      </div>
+    </div>
+  </details>`;
+}
+
 /* ---------- Event Binding ---------- */
 
 function bindEvents() {
   initModeTooltips();
+  initAutoOffControls();
 
   document.getElementById('btn-connect').addEventListener('click', () => serialConnect());
   document.getElementById('btn-disconnect').addEventListener('click', () => serialDisconnect());
@@ -512,8 +566,10 @@ function bindEvents() {
 function updateDisplay(data) {
   dataSequence += 1;
   // KPI tiles
-  if (data.FluidTemperature_STATE !== undefined)
+  if (data.FluidTemperature_STATE !== undefined) {
     document.getElementById('kpi-fluid-temp').textContent = parseFloat(data.FluidTemperature_STATE).toFixed(1);
+    updateTachometer('fluid', data.FluidTemperature_STATE, 0, 70);
+  }
   if (data.MainHeaterTemperature_STATE !== undefined && isHeaterVisible('MainHeater'))
     document.getElementById('kpi-main-heater').textContent = parseFloat(data.MainHeaterTemperature_STATE).toFixed(1);
   if (data.AUXHeaterTemperature_STATE !== undefined && isHeaterVisible('AuxHeater'))
@@ -525,8 +581,11 @@ function updateDisplay(data) {
     const pct = data.Vacuum_SETPOINT;
     vacTargetEl.textContent = pct === undefined ? 'SP(raw): -- %' : `SP(raw): ${pct}%`;
   }
-  if (data.Pressure_STATE !== undefined)
+  if (data.Pressure_STATE !== undefined) {
     document.getElementById('kpi-pressure').textContent = data.Pressure_STATE;
+    const configuredMax = Number(data.PressureMAX_SETPOINT);
+    updateTachometer('pressure', data.Pressure_STATE, 0, Number.isFinite(configuredMax) && configuredMax > 0 ? configuredMax : 100);
+  }
 
   // Setpoint readbacks
   for (const sp of SETPOINTS) {
@@ -579,6 +638,27 @@ function updateDisplay(data) {
   observeRunTimer(data);
   applyModeInterlocks(data);
   applyHeaterVisibilityUI();
+  for (const key of Object.keys(MODE_DEFINITIONS)) {
+    const state = document.getElementById(`mode-help-state-${key}`);
+    if (state && data[key] !== undefined) state.textContent = Number(data[key]) === 1 ? 'ON' : 'OFF';
+  }
+  for (const key of [...autoOffTimers.keys()]) {
+    if (data[key] !== undefined && Number(data[key]) === 0) cancelAutoOffTimer(key);
+  }
+}
+
+function updateTachometer(id, rawValue, min, max) {
+  const el = document.getElementById(`tach-${id}`);
+  const value = Number(rawValue);
+  if (!el || !Number.isFinite(value) || !Number.isFinite(max) || max <= min) return;
+  const percentage = Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100));
+  el.style.setProperty('--tach-angle', `${-90 + percentage * 1.8}deg`);
+  el.style.setProperty('--tach-fill', `${percentage} 100`);
+  el.setAttribute('aria-valuemin', String(min));
+  el.setAttribute('aria-valuemax', String(max));
+  el.setAttribute('aria-valuenow', String(value));
+  const caption = el.querySelector('span');
+  if (caption) caption.textContent = `Measured · ${min}–${max} ${id === 'fluid' ? '°C' : 'psi'}`;
 }
 
 function pushHistory(map, key, val) {
@@ -643,16 +723,39 @@ function updateErrorCard(raw) {
       kpiErrorCard.classList.remove('severity-info', 'severity-warning', 'severity-critical', 'severity-ok');
       kpiErrorCard.classList.add(`severity-${error.severity || 'critical'}`);
     }
+    const severityColor = error.severity === 'critical' ? 'var(--accent-red)' : 'var(--accent-amber)';
+    kpiError.style.color = severityColor;
+    if (kpiErrorTitle) kpiErrorTitle.style.color = severityColor;
     if (dismissBtn) dismissBtn.disabled = false;
+  } else if (isActiveError(error.code) && isDismissed) {
+    kpiError.textContent = error.code;
+    kpiError.style.color = 'var(--accent-amber)';
+    if (kpiErrorTitle) { kpiErrorTitle.textContent = `Dismissed — ${error.title}`; kpiErrorTitle.style.color = 'var(--accent-amber)'; }
+    if (kpiErrorDetail) kpiErrorDetail.textContent = 'This alarm is still reported by the controller. It has only been hidden from the banner.';
+    if (kpiErrorCard) {
+      kpiErrorCard.classList.remove('d-none', 'severity-info', 'severity-critical', 'severity-ok', 'severity-unknown');
+      kpiErrorCard.classList.add('severity-warning');
+    }
+    if (dismissBtn) dismissBtn.disabled = true;
+  } else if (isActiveError(error.code) && isSuppressed) {
+    kpiError.textContent = error.code;
+    kpiError.style.color = 'var(--accent-amber)';
+    if (kpiErrorTitle) { kpiErrorTitle.textContent = `Ignored unused-heater alarm — ${error.title}`; kpiErrorTitle.style.color = 'var(--accent-amber)'; }
+    if (kpiErrorDetail) kpiErrorDetail.textContent = 'The affected heater is marked unused in Settings. Confirm that hardware configuration is intentional.';
+    if (kpiErrorCard) {
+      kpiErrorCard.classList.remove('d-none', 'severity-info', 'severity-critical', 'severity-ok', 'severity-unknown');
+      kpiErrorCard.classList.add('severity-warning');
+    }
+    if (dismissBtn) dismissBtn.disabled = true;
   } else {
     kpiError.innerHTML = '&nbsp;';
     kpiError.style.color = '';
     if (kpiErrorTitle) { kpiErrorTitle.textContent = 'No Active Errors'; kpiErrorTitle.style.color = 'var(--accent-green)'; }
     if (kpiErrorDetail) kpiErrorDetail.textContent = 'No active alarms detected. Happy printing :)';
     if (kpiErrorCard) {
-      kpiErrorCard.classList.remove('severity-info', 'severity-warning', 'severity-critical');
+      kpiErrorCard.classList.remove('severity-info', 'severity-warning', 'severity-critical', 'severity-unknown');
       kpiErrorCard.classList.add('severity-ok');
-      kpiErrorCard.classList.add('d-none');
+      kpiErrorCard.classList.remove('d-none');
     }
     if (dismissBtn) dismissBtn.disabled = true;
   }
@@ -680,6 +783,12 @@ function updateConnectionUI(state) {
   document.querySelectorAll('.btn-send-sp').forEach(btn => btn.disabled = !connected);
   syncSendAllButton();
   applyModeInterlocks();
+  if (!connected && autoOffTimers.size) {
+    cancelAllAutoOffTimers();
+    guiAutoOffArmed.clear();
+    setModeStatusMessage('Connection lost while GUI auto-off was armed. Verify every active mode at the machine.');
+    store.log('warning', 'GUI auto-off canceled by controller disconnect; local verification required');
+  }
 }
 
 function isRunModeActive(data = null) {
@@ -755,11 +864,22 @@ function maintenanceModeAllowed(key) {
 }
 
 async function requestMode(key, value, message) {
-  if (pendingModes.has(key)) return false;
+  if (pendingModes.has(key)) {
+    if (Number(value) !== 0) return false;
+    pendingModes.delete(key);
+    guiAutoOffArmed.delete(key);
+    updateCommandFeedback(key, 'pending');
+  }
   const ok = await send(JSON.stringify({ [key]: String(value) }));
   if (!ok) {
     setModeStatusMessage(`Could not send ${key}. Check the USB connection.`);
+    if (key !== 'Run_MODE') updateCommandFeedback(key, 'failed');
     return false;
+  }
+  if (Number(value) === 1 && Object.hasOwn(GUI_AUTO_OFF_DEFAULTS, key)) guiAutoOffArmed.add(key);
+  if (Number(value) === 0) {
+    guiAutoOffArmed.delete(key);
+    cancelAutoOffTimer(key);
   }
   const pending = { value: Number(value), at: Date.now(), sequence: dataSequence };
   pendingModes.set(key, pending);
@@ -778,6 +898,8 @@ async function commandAllModesOff() {
     '<p><strong>This sends OFF for Run, Purge, Flush, Drain, and Bypass.</strong></p><p class="mb-0">Stay at the machine until every controller readback confirms OFF. This is a controlled shutdown command, not an emergency stop.</p>',
     'Command all OFF', 'btn-danger');
   if (!ok) return;
+  cancelAllAutoOffTimers();
+  guiAutoOffArmed.clear();
   for (const command of allModesOffCommands()) {
     const [key] = Object.keys(JSON.parse(command));
     if (!await send(command)) {
@@ -801,14 +923,81 @@ function reconcilePendingModes(data) {
     if (dataSequence > pending.sequence && modeReadbackMatches(data, key, pending.value)) {
       pendingModes.delete(key);
       if (key !== 'Run_MODE') updateCommandFeedback(key, 'confirmed');
-      setModeStatusMessage(`${key.replace('_MODE', '')} is confirmed ${pending.value ? 'on' : 'off'}.`);
+      if (pending.value === 1 && guiAutoOffArmed.has(key)) {
+        guiAutoOffArmed.delete(key);
+        scheduleAutoOffTimer(key);
+      }
+      if (pending.value === 0) cancelAutoOffTimer(key);
+      const timer = autoOffTimers.get(key);
+      setModeStatusMessage(`${key.replace('_MODE', '')} is confirmed ${pending.value ? 'on' : 'off'}${timer ? `; GUI auto-off is armed for ${timer.seconds} seconds` : ''}.`);
     } else if (Date.now() - pending.at > 8000) {
       pendingModes.delete(key);
+      guiAutoOffArmed.delete(key);
       if (key !== 'Run_MODE') updateCommandFeedback(key, 'failed');
       setModeStatusMessage(`${key.replace('_MODE', '')} was not confirmed within 8 seconds. Verify locally.`);
       store.log('warning', `${key} command was not confirmed`);
     }
   }
+}
+
+function initAutoOffControls() {
+  document.querySelectorAll('[data-autooff-key]').forEach(select => {
+    const key = select.dataset.autooffKey;
+    const fallback = GUI_AUTO_OFF_DEFAULTS[key] || 0;
+    select.value = String(readAutoOffPreference(key, fallback));
+    select.addEventListener('change', () => {
+      const seconds = normalizeAutoOffSeconds(select.value, fallback);
+      select.value = String(seconds);
+      try { localStorage.setItem(`ids.guiAutoOff.${key}`, String(seconds)); } catch { /* non-persistent browser */ }
+      if (autoOffTimers.has(key)) scheduleAutoOffTimer(key);
+    });
+  });
+}
+
+function readAutoOffPreference(key, fallback) {
+  try { return normalizeAutoOffSeconds(localStorage.getItem(`ids.guiAutoOff.${key}`), fallback); }
+  catch { return fallback; }
+}
+
+function scheduleAutoOffTimer(key) {
+  cancelAutoOffTimer(key);
+  const select = document.getElementById(`autooff-${key}`);
+  const seconds = normalizeAutoOffSeconds(select?.value, GUI_AUTO_OFF_DEFAULTS[key] || 0);
+  if (!seconds) return;
+  const end = Date.now() + seconds * 1000;
+  const timer = { seconds, interval: null };
+  const tick = async () => {
+    const remaining = end - Date.now();
+    const el = document.getElementById(`timer-${key}`);
+    if (el) {
+      el.className = 'mode-autooff';
+      el.innerHTML = `<i class="bi bi-clock"></i>${formatCountdown(remaining)}`;
+      el.title = 'Browser-assisted auto-off countdown';
+    }
+    if (remaining > 0) return;
+    cancelAutoOffTimer(key);
+    if (store.connection !== 'CONNECTED') {
+      setModeStatusMessage(`${MODE_DEFINITIONS[key].label} auto-off could not send because the controller disconnected. Verify locally.`);
+      store.log('warning', `${key} GUI auto-off could not send after disconnect`);
+      return;
+    }
+    await requestMode(key, 0, `${MODE_DEFINITIONS[key].label} GUI auto-off requested`);
+  };
+  timer.interval = setInterval(tick, 250);
+  autoOffTimers.set(key, timer);
+  tick();
+}
+
+function cancelAutoOffTimer(key) {
+  const timer = autoOffTimers.get(key);
+  if (timer?.interval) clearInterval(timer.interval);
+  autoOffTimers.delete(key);
+  const el = document.getElementById(`timer-${key}`);
+  if (el) { el.className = 'mode-autooff d-none'; el.textContent = ''; }
+}
+
+function cancelAllAutoOffTimers() {
+  for (const key of [...autoOffTimers.keys()]) cancelAutoOffTimer(key);
 }
 
 function updateCommandFeedback(key, state) {

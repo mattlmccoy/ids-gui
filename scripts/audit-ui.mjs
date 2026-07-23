@@ -41,6 +41,13 @@ for (const key of ['Run_MODE', 'Purge_MODE', 'Flush_MODE', 'Drain_MODE', 'Bypass
   if (!modeControl.includes(key) || !operation.includes('requestMode')) throw new Error(`Missing shared operating-mode command path: ${key}`);
 }
 if (!operation.includes('commandAllModesOff') || !modeControl.includes('allModesOffCommands')) throw new Error('Missing verified All Modes Off control');
+for (const marker of ['operation-mode-help', 'What do these modes do?', 'GUI auto-off assist', 'scheduleAutoOffTimer', 'severity-ok', 'mini-tach']) {
+  if (!operation.includes(marker)) throw new Error(`Operation context/safeguard UI is missing ${marker}`);
+}
+if (operation.includes('kpi-error d-none')) throw new Error('Active error summary is hidden by default');
+for (const key of ['Purge_MODE', 'Drain_MODE', 'Bypass_MODE']) {
+  if (!modeControl.includes(`${key}:`) || !operation.includes(`timer-${key}`)) throw new Error(`Missing GUI auto-off assistance for ${key}`);
+}
 
 for (const stateKey of [
   'flushPump_STATE',
@@ -84,6 +91,15 @@ for (const marker of ['automationReady', 'safeShutdownCommands', 'Stop & command
 }
 if (!validation.includes('Finish certification')) throw new Error('Lab validation certification workflow is missing');
 if (!indexHtml.includes('panel-debug') || !read('js/app.js').includes('initDebugTab')) throw new Error('Debug page is not wired into the application');
+for (const [tab, initializer] of [
+  ['operation', 'initOperationTab'], ['trending', 'initChartsTab'], ['monitor', 'initMonitorTab'],
+  ['ink', 'initInkTab'], ['log', 'initLogTab'], ['debug', 'initDebugTab'],
+  ['settings', 'initSettingsTab'], ['validation', 'initValidationTab']
+]) {
+  if (!indexHtml.includes(`id="tab-${tab}"`) || !indexHtml.includes(`id="panel-${tab}"`) || !read('js/app.js').includes(`${initializer}()`)) {
+    throw new Error(`Tab regression: ${tab} is not fully wired to ${initializer}`);
+  }
+}
 for (const marker of ['Conceptual plumbing map', 'data-map-preview', 'debug-telemetry-body', 'Advanced raw command', 'downloadDiagnosticBundle']) {
   if (!debug.includes(marker)) throw new Error(`Debug page is missing ${marker}`);
 }

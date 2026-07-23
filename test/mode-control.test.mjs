@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  activeMaintenanceMode, allModesOffCommands, formatCountdown, modeReadbackMatches
+  GUI_AUTO_OFF_DEFAULTS, activeMaintenanceMode, allModesOffCommands,
+  formatCountdown, modeReadbackMatches, normalizeAutoOffSeconds
 } from '../js/mode-control.js';
 
 test('all modes off commands include Run and every maintenance mode', () => {
@@ -9,6 +10,13 @@ test('all modes off commands include Run and every maintenance mode', () => {
     { Run_MODE: '0' }, { Purge_MODE: '0' }, { Flush_MODE: '0' },
     { Drain_MODE: '0' }, { Bypass_MODE: '0' }
   ]);
+});
+
+test('GUI auto-off accepts only explicit supported durations', () => {
+  assert.deepEqual(GUI_AUTO_OFF_DEFAULTS, { Purge_MODE: 30, Drain_MODE: 60, Bypass_MODE: 120 });
+  assert.equal(normalizeAutoOffSeconds('30', 0), 30);
+  assert.equal(normalizeAutoOffSeconds(null, 60), 60);
+  assert.equal(normalizeAutoOffSeconds('45', 60), 60);
 });
 
 test('maintenance interlock ignores bypass and the requested mode', () => {
