@@ -8,23 +8,26 @@ import { confirm } from './ui-dialogs.js';
 import { syncExperienceControls } from './experience-mode.js';
 import { getFirmwareSimulatorState, startFirmwareSimulator, stopFirmwareSimulator } from './firmware-simulator.js';
 
-const MODE_PREVIEWS = ['live', 'run', 'purge', 'flush', 'drain', 'bypass'];
-// Element id -> telemetry readback key. node-mv1 is bound to the single physical
-// ball valve (opens for the whole run to let the pressure-control box pressurize the
-// loop); the exact firmware key is a lab-verification item. node-flush-*, node-mv2,
-// and node-bypass-valve are firmware outputs with no confirmed hardware on this build.
+// No flush preview: this build has no flush hardware (FIRMWARE_SPEC_R17 §3 shows a
+// flushValve/flushPump output, but nothing is plumbed to it here).
+const MODE_PREVIEWS = ['live', 'run', 'purge', 'drain'];
+// Element id -> telemetry readback key. node-mv1 is the single physical ball valve.
+// Per FIRMWARE_SPEC_R17 §4.2/§4.3, manifoldValve1 and manifoldValve2 are always driven
+// to the SAME value in the SAME places (both open in Run and Drain, both closed
+// otherwise), so MV2 has no independent function and is not drawn separately — the ball
+// valve tracks ManifoldValve1.
 const NODE_STATES = {
   'node-input-pump': 'InputPump_STATE', 'node-recirc-pump': 'RecirculationPump_STATE',
   'node-drain-pump': 'DrainPump_STATE', 'node-vacuum-pump': 'VacuumPump_STATE',
-  'node-flush-pump': 'flushPump_STATE', 'node-flush-valve': 'flushValve_STATE',
-  'node-mv1': 'ManifoldValve1_STATE', 'node-mv2': 'ManifoldValve2_STATE',
-  'node-bypass-valve': 'BypassValve_STATE'
+  'node-mv1': 'ManifoldValve1_STATE',
+  'node-weir-float': 'WeirFloat_STATE', 'node-weir-ovf-float': 'WeirOverflowFloat_STATE'
 };
 
 let selectedPreview = 'live';
 let telemetryFilter = '';
 let lastDataAt = 0;
 let refreshTimer = null;
+let mapZoom = 1;
 
 export function initDebugTab() {
   const panel = document.getElementById('panel-debug');
@@ -45,6 +48,7 @@ export function initDebugTab() {
   window.addEventListener('beforeunload', () => clearInterval(refreshTimer), { once: true });
   updateLiveSummary(store.data);
   updateSchematic(store.data);
+  applyMapZoom();
   renderTelemetry();
   renderEventHistory();
   syncExperienceControls();
@@ -87,7 +91,14 @@ function buildHTML() {
         </div>
       </div>
       <div class="card-body">
-        <div class="map-context mb-2"><span id="map-context-title">Live controller state</span><span id="map-context-detail">Layout follows the traced fluid diagram. Colored lines highlight the electronically active path for the current mode; the bottom strip holds firmware outputs with no confirmed hardware on this build.</span></div>
+        <div class="map-context mb-2"><span id="map-context-title">Live controller state</span><span id="map-context-detail">Layout follows the traced fluid diagram. Colored lines highlight the electronically active path for the current mode.</span></div>
+        <div class="d-flex align-items-center justify-content-end gap-1 mb-2">
+          <span class="small text-muted me-1">Zoom</span>
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-map-zoom="out" aria-label="Zoom out">−</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-map-zoom="fit">Fit</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-map-zoom="in" aria-label="Zoom in">+</button>
+          <span class="small text-muted ms-1" id="map-zoom-level" style="min-width:3.2em;text-align:right">100%</span>
+        </div>
         ${plumbingSvg()}
         <div class="schematic-legend mt-2">
           <span><i class="legend-line live"></i>Active / previewed flow</span>
@@ -97,7 +108,7 @@ function buildHTML() {
         </div>
         <details class="debug-disclosure mt-3">
           <summary>Assumptions and known R17 limitations</summary>
-          <div class="pt-2 small text-muted">Topology matches an owner-supplied trace of the machine: ink supply/recirc through the APS box pumps (I/R/D + vacuum), an inline heater, a Xaar Aquinox recirculating printhead (2 inlets, 2 outlets converging to one), a fluid-temperature thermistor, a return tee, and the ball-valve → pressure-control-box (WEIR + WEIR OVF floats) → vacuum branch with a catch pot for overflow. Still lab-verification items: raw float polarity, exact firmware key behind the single ball valve (bound to MV1 here), and the destinations of the unmapped Flush, MV2, and Bypass outputs shown in the bottom strip. Flush has no dedicated hardware on this build and R17's flush timer clears shortly after boot, so commanding Flush moves no fluid.</div>
+          <div class="pt-2 small text-muted">Topology matches an owner-supplied trace of the machine: ink supply/recirc through the APS box pumps (I/R/D + vacuum), an inline heater, a Xaar Aquinox recirculating printhead (2 inlets, 2 outlets converging to one), a fluid-temperature thermistor, a return tee, and the ball-valve → pressure-control-box (WEIR + WEIR OVF floats) → vacuum branch with a catch pot for overflow. Inside the APS box the vacuum is regulated by an SMC ITV2090 and the heaters switch through a ZGT-25 SSR. <strong>Manifold V2:</strong> per FIRMWARE_SPEC_R17 §4.2/§4.3 the firmware always drives manifoldValve1 and manifoldValve2 to the same value at the same time (both open in Run and Drain, both closed otherwise), so MV2 has no independent function — this build has a single ball valve, shown here tracking MV1. <strong>Flush:</strong> no dedicated flush hardware exists on this build, so the flush pump/valve outputs and Flush preview are omitted. Still lab-verification items: raw float polarity and the exact firmware key behind the ball valve.</div>
         </details>
       </div>
     </div>
@@ -142,68 +153,80 @@ function summaryCard(id, label, value, icon) {
 }
 
 function plumbingSvg() {
-  return `<div class="plumbing-map-wrap"><svg class="plumbing-map" viewBox="0 0 1120 660" role="img" aria-labelledby="plumbing-title plumbing-desc">
-    <title id="plumbing-title">Conceptual IDS plumbing map</title><desc id="plumbing-desc">Traced diagram: ink supply and recirculation through the APS box pumps, an inline heater, a Xaar Aquinox recirculating printhead, a fluid-temperature thermistor, a return tee, and the ball-valve / pressure-control-box / vacuum branch. Flush, second manifold valve, and bypass are firmware outputs with no confirmed hardware on this build.</desc>
+  return `<div class="plumbing-map-wrap"><svg class="plumbing-map" viewBox="0 0 1240 645" role="img" aria-labelledby="plumbing-title plumbing-desc">
+    <title id="plumbing-title">Conceptual IDS plumbing map</title><desc id="plumbing-desc">Traced diagram: ink supply and recirculation through the APS box pumps, an inline heater, a Xaar Aquinox recirculating printhead, a fluid-temperature thermistor, a return tee, and the ball-valve / pressure-control-box / vacuum branch. This build has no flush hardware; manifold valve 2 has no independent function.</desc>
     <defs><marker id="map-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z"></path></marker></defs>
 
-    <g class="map-zone"><rect x="16" y="64" width="150" height="440" rx="16"></rect><text x="34" y="92">INK SUPPLY</text></g>
-    <g class="map-zone"><rect x="182" y="64" width="250" height="440" rx="16"></rect><text x="200" y="92">APS BOX · PUMPS · VACUUM</text></g>
-    <g class="map-zone"><rect x="448" y="64" width="340" height="440" rx="16"></rect><text x="466" y="92">CONDITIONING · WEIR · RETURN</text></g>
-    <g class="map-zone"><rect x="804" y="64" width="300" height="440" rx="16"></rect><text x="822" y="92">PRINTHEAD</text></g>
-    <g class="map-zone"><rect x="16" y="520" width="1088" height="120" rx="16"></rect><text x="34" y="548">UNMAPPED FIRMWARE OUTPUTS — NO CONFIRMED HARDWARE ON THIS BUILD</text></g>
+    <!-- region labels -->
+    <text x="60" y="58" fill="#64748b" font-size="12" font-weight="700" letter-spacing="1.5">INK &amp; APS BOX</text>
+    <text x="560" y="58" fill="#64748b" font-size="12" font-weight="700" letter-spacing="1.5">CONDITIONING · WEIR · RETURN</text>
+    <text x="1010" y="58" fill="#64748b" font-size="12" font-weight="700" letter-spacing="1.5">PRINTHEAD</text>
 
-    <!-- ink supply / recirculation loop -->
-    <path class="map-pipe path-supply" data-path="run purge" d="M140 195H190V176H213" marker-end="url(#map-arrow)"></path>
-    <path class="map-pipe path-return" data-path="run purge" d="M366 150V120H85V150" marker-end="url(#map-arrow)"></path>
-    <!-- conditioned supply: APS -> heater -> printhead inlets -->
-    <path class="map-pipe path-run" data-path="run purge" d="M432 139H600" marker-end="url(#map-arrow)"></path>
-    <path class="map-pipe path-run" data-path="run purge" d="M750 139H915"></path>
-    <path class="map-pipe path-run" data-path="run purge" d="M885 139V150" marker-end="url(#map-arrow)"></path>
-    <path class="map-pipe path-run" data-path="run purge" d="M915 139V150" marker-end="url(#map-arrow)"></path>
-    <!-- printhead return: outlets converge -> thermistor -> tee -->
-    <path class="map-pipe path-return" data-path="run purge" d="M945 150V120"></path>
-    <path class="map-pipe path-return" data-path="run purge" d="M975 150V120"></path>
-    <path class="map-pipe path-return" data-path="run purge" d="M945 120H1040V479H870" marker-end="url(#map-arrow)"></path>
-    <path class="map-pipe path-return" data-path="run purge" d="M720 479H686V460" marker-end="url(#map-arrow)"></path>
-    <!-- tee middle -> outlet back to APS box -->
-    <path class="map-pipe path-return" data-path="run purge" d="M651 433H620V478H200" marker-end="url(#map-arrow)"></path>
+    <!-- APS box: solid container holding the pumps + vacuum -->
+    <rect x="50" y="210" width="300" height="290" rx="14" fill="rgba(148,163,184,.06)" stroke="#3a4353" stroke-width="2"></rect>
+    <text x="285" y="236" fill="#94a3b8" font-size="13" font-weight="700" letter-spacing="1">APS BOX</text>
+    ${mapPort(200,210)}${mapPort(121,210)}${mapPort(70,500)}${mapPort(350,289)}${mapPort(350,377)}
+
+    <!-- ink supply -> input pump -> heater -> printhead (2 inlets) -->
+    <path class="map-pipe path-run" data-path="run purge" d="M200 165V235H251V262" marker-end="url(#map-arrow)"></path>
+    <path class="map-pipe path-run" data-path="run purge" d="M277 289H450" marker-end="url(#map-arrow)"></path>
+    <!-- return: tee -> recirc pump -> ink -->
+    <path class="map-pipe path-return" data-path="run purge" d="M775 572H70V288H95" marker-end="url(#map-arrow)"></path>
+    <path class="map-pipe path-return" data-path="run purge" d="M121 262V165" marker-end="url(#map-arrow)"></path>
+    <path class="map-pipe path-run" data-path="run purge" d="M600 289H955V195H1085"></path>
+    <path class="map-pipe path-run" data-path="run purge" d="M1055 195V205" marker-end="url(#map-arrow)"></path>
+    <path class="map-pipe path-run" data-path="run purge" d="M1085 195V205" marker-end="url(#map-arrow)"></path>
+    <!-- printhead return: 2 outlets converge -> thermistor -> tee -->
+    <path class="map-pipe path-return" data-path="run purge" d="M1115 195V155"></path>
+    <path class="map-pipe path-return" data-path="run purge" d="M1145 195V155"></path>
+    <path class="map-pipe path-return" data-path="run purge" d="M1115 155H1215V572H1190" marker-end="url(#map-arrow)"></path>
+    <path class="map-pipe path-return" data-path="run purge" d="M1005 572H845" marker-end="url(#map-arrow)"></path>
     <!-- tee top -> ball valve -> pressure control box (system pressurization) -->
-    <path class="map-pipe path-run" data-path="run" d="M686 406V352"></path>
-    <path class="map-pipe path-run" data-path="run" d="M660 326H636"></path>
-    <!-- vacuum line: APS -> catch pot -> pressure control box -->
-    <path class="map-pipe path-vacuum" data-path="run" d="M432 190H470"></path>
-    <path class="map-pipe path-vacuum" data-path="run" d="M525 235V280" marker-end="url(#map-arrow)"></path>
+    <path class="map-pipe path-run" data-path="run" d="M810 545V475"></path>
+    <path class="map-pipe path-run" data-path="run" d="M785 455H740"></path>
+    <!-- vacuum: OUT of pressure control box -> catch pot -> vacuum pump in APS box -->
+    <path class="map-pipe path-vacuum" data-path="run" d="M647 405V377H500" marker-end="url(#map-arrow)"></path>
+    <path class="map-pipe path-vacuum" data-path="run" d="M390 377H251V395" marker-end="url(#map-arrow)"></path>
 
-    ${mapTank(30,150,'Ink supply','bulk + recirc')}
-    ${mapComponent('node-input-pump',213,150,'pump','Input pump · I')}
-    ${mapComponent('node-recirc-pump',340,150,'pump','Recirc pump · R')}
-    ${mapComponent('node-drain-pump',213,300,'pump','Drain pump · D')}
-    ${mapComponent('node-vacuum-pump',340,300,'pump','Vacuum pump')}
-    ${mapBox(200,392,200,52,'Vac. regulator + heater SSR','SMC ITV2090 · ZGT-25')}
-    ${mapBox(600,110,150,58,'Heater','+ thermocouple')}
-    ${mapTank(470,150,'Catch pot','vac. overflow')}
-    ${mapBox(468,280,168,96,'Pressure control box','WEIR + WEIR OVF floats')}
-    ${mapComponent('node-mv1',660,300,'valve','Ball valve')}
-    ${mapTee(651,406)}
-    ${mapBox(720,455,150,48,'Thermistor','fluid temp')}
-    ${mapPrinthead(840,150)}
+    ${mapTank(105,80,'Ink supply','bulk + recirc')}
+    ${mapComponent('node-recirc-pump',95,262,'pump','Recirc pump · R')}
+    ${mapComponent('node-input-pump',225,262,'pump','Input pump · I')}
+    ${mapComponent('node-drain-pump',95,392,'pump','Drain pump · D')}
+    ${mapComponent('node-vacuum-pump',225,392,'pump','Vacuum pump')}
+    ${mapBox(450,258,150,62,'Heater','+ thermocouple')}
+    ${mapTank(390,345,'Catch pot','vac. overflow')}
+    <g class="map-component" transform="translate(555 405)"><rect width="185" height="100" rx="9"></rect><text x="92" y="34">Pressure control box</text></g>
+    ${mapFloat('node-weir-float',600,468,'WEIR')}
+    ${mapFloat('node-weir-ovf-float',690,468,'WEIR OVF')}
+    ${mapComponent('node-mv1',785,430,'valve','Ball valve')}
+    ${mapTee(775,545)}
+    ${mapBox(1005,542,185,60,'Thermistor','fluid temp')}
+    ${mapPrinthead(1010,195)}
 
-    ${mapComponent('node-flush-pump',150,552,'pump','Flush pump')}
-    ${mapComponent('node-flush-valve',320,552,'valve','Flush valve')}
-    ${mapComponent('node-mv2',500,552,'valve','Manifold V2')}
-    ${mapComponent('node-bypass-valve',680,552,'valve','Bypass valve')}
-
-    <text class="map-note" x="150" y="130">recirc</text>
-    <text class="map-note" x="150" y="182">supply</text>
-    <text class="map-note" x="700" y="102">thermocouple</text>
-    <text class="map-note" x="420" y="470">outlet → APS box</text>
-    <text class="map-note" x="820" y="135">2 inlets</text>
-    <text class="map-note" x="988" y="112">2 outlets</text>
-    <text class="map-note" x="892" y="300">nozzles → ink out</text>
-    <text class="map-note" x="586" y="176">vacuum</text>
-    <text class="map-note" x="716" y="320">MV1 (key to confirm)</text>
-    <text class="map-note" x="720" y="596">Flush timer inert on R17 · MV2/Bypass not traced</text>
+    <text class="map-note" x="60" y="196">recirc</text>
+    <text class="map-note" x="206" y="196">supply</text>
+    <text class="map-note" x="452" y="248">thermocouple</text>
+    <text class="map-note" x="255" y="368">vacuum → vac pump</text>
+    <text class="map-note" x="985" y="182">2 inlets</text>
+    <text class="map-note" x="1150" y="150">2 outlets</text>
+    <text class="map-note" x="1028" y="348">nozzles → ink out</text>
+    <text class="map-note" x="300" y="592">outlet → recirc pump → ink</text>
+    <text class="map-note" x="845" y="449">MV1 · opens in Run + Drain</text>
+    <text class="map-note" x="845" y="465">(MV2 fires with it — no separate valve)</text>
   </svg></div>`;
+}
+
+function applyMapZoom() {
+  const svg = document.querySelector('.plumbing-map');
+  if (svg) svg.style.width = `${Math.round(mapZoom * 100)}%`;
+  const label = document.getElementById('map-zoom-level');
+  if (label) label.textContent = `${Math.round(mapZoom * 100)}%`;
+}
+function mapPort(x, y) {
+  return `<circle cx="${x}" cy="${y}" r="4" fill="#3a4353" stroke="#64748b" stroke-width="1.5"></circle>`;
+}
+function mapFloat(id, x, y, label) {
+  return `<g class="map-component float" id="${id}" transform="translate(${x} ${y})"><circle cx="0" cy="0" r="9"></circle><text class="map-subtext" x="0" y="25">${label}</text></g>`;
 }
 
 function mapTank(x, y, label, sublabel) {
@@ -226,6 +249,14 @@ function mapPrinthead(x, y) {
 
 function bindEvents(panel) {
   panel.addEventListener('click', event => {
+    const zoom = event.target.closest('[data-map-zoom]')?.dataset.mapZoom;
+    if (zoom) {
+      if (zoom === 'in') mapZoom = Math.min(2.5, Math.round((mapZoom + 0.2) * 10) / 10);
+      else if (zoom === 'out') mapZoom = Math.max(0.8, Math.round((mapZoom - 0.2) * 10) / 10);
+      else mapZoom = 1;
+      applyMapZoom();
+      return;
+    }
     const preview = event.target.closest('[data-map-preview]')?.dataset.mapPreview;
     if (preview) {
       selectedPreview = preview;
@@ -329,7 +360,7 @@ function updateSchematic(data) {
 
 function liveModes(data) {
   const modes = new Set();
-  for (const mode of ['run', 'purge', 'flush', 'drain', 'bypass']) {
+  for (const mode of ['run', 'purge', 'drain']) {
     if (Number(data[`${capitalize(mode)}_MODE`]) === 1) modes.add(mode);
   }
   return modes;
@@ -339,9 +370,7 @@ function previewOutputs(mode) {
   return {
     run: ['InputPump_STATE', 'RecirculationPump_STATE', 'VacuumPump_STATE', 'ManifoldValve1_STATE', 'ManifoldValve2_STATE'],
     purge: ['InputPump_STATE', 'RecirculationPump_STATE'],
-    flush: ['flushPump_STATE', 'flushValve_STATE'],
-    drain: ['DrainPump_STATE', 'ManifoldValve1_STATE', 'ManifoldValve2_STATE'],
-    bypass: ['BypassValve_STATE']
+    drain: ['DrainPump_STATE', 'ManifoldValve1_STATE', 'ManifoldValve2_STATE']
   }[mode] || [];
 }
 
