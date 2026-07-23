@@ -808,8 +808,10 @@ function dataForErrorDisplay() {
 
 function updateConnectionUI(state) {
   const connected = state === 'CONNECTED' || store.simulationActive;
-  document.getElementById('btn-connect').disabled = connected || state === 'CONNECTING';
-  document.getElementById('btn-disconnect').disabled = !connected;
+  const busy = state === 'CONNECTING' || state === 'RECONNECTING';
+  document.getElementById('btn-connect').disabled = connected || busy;
+  // Keep Disconnect available while busy so the operator can cancel an in-progress (re)connect.
+  document.getElementById('btn-disconnect').disabled = !connected && !busy;
   const disconnectButton = document.getElementById('btn-disconnect');
   if (disconnectButton) disconnectButton.innerHTML = store.simulationActive
     ? '<i class="bi bi-stop-circle me-1"></i>Stop simulation'

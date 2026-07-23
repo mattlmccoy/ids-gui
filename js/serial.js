@@ -2,6 +2,7 @@
 
 import store from './state.js';
 import { handleSimulatedCommand } from './firmware-simulator.js';
+import { shouldAutoReconnect, selectReconnectPort, nextReconnectDelayMs } from './serial-reconnect.js';
 
 const BAUD_RATE = 115200;
 const ARDUINO_VENDOR_ID = 0x2341;
@@ -16,6 +17,9 @@ let writer = null;
 let readLoopActive = false;
 let pollTimer = null;
 let pollIntervalMs = NOMINAL_POLL_INTERVAL_MS;
+let autoReconnect = true;
+let reconnectTimer = null;
+let reconnectAttempts = 0;
 
 /* ---------- Brace-counting JSON frame parser ---------- */
 
@@ -137,11 +141,70 @@ function stopPolling() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 }
 
+
+/* ---------- Auto-reconnect ---------- */
+
+function attachDisconnectListener() {
+  port.addEventListener('disconnect', () => {
+    store.log('warning', 'USB device disconnected');
+    disconnect('unexpected');
+  });
+}
+
+function cancelReconnect() {
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  reconnectAttempts = 0;
+}
+
+function beginAutoReconnect() {
+  if (store.connection !== 'RECONNECTING') {
+    store.setConnection('RECONNECTING');
+    store.log('info', 'Controller lost — attempting to reconnect (telemetry only)…');
+  }
+  if (reconnectTimer) return; // an attempt is already scheduled
+  scheduleReconnect(nextReconnectDelayMs(reconnectAttempts));
+}
+
+function scheduleReconnect(delay) {
+  reconnectTimer = setTimeout(tryReconnect, delay);
+}
+
+async function tryReconnect() {
+  reconnectTimer = null;
+  if (!autoReconnect) { cancelReconnect(); return; }
+  reconnectAttempts += 1;
+  try {
+    const ports = await navigator.serial.getPorts();
+    const target = selectReconnectPort(ports, ARDUINO_VENDOR_ID);
+    if (target) {
+      port = target;
+      await port.open({ baudRate: BAUD_RATE });
+      writer = port.writable.getWriter();
+      buffer = '';
+      attachDisconnectListener();
+      store.setConnection('CONNECTED');
+      store.log('info', `Reconnected at ${BAUD_RATE} baud (attempt ${reconnectAttempts})`);
+      reconnectAttempts = 0;
+      readLoop().catch(err => console.error('[serial] readLoop exited:', err));
+      startPolling();
+      return;
+    }
+  } catch (err) {
+    try { writer?.releaseLock(); } catch (_) { /* ignore */ }
+    writer = null;
+    try { await port?.close(); } catch (_) { /* ignore */ }
+    port = null;
+  }
+  if (autoReconnect) scheduleReconnect(nextReconnectDelayMs(reconnectAttempts));
+}
+
 /* ---------- Public API ---------- */
 
 export async function connect() {
   if (store.connection === 'CONNECTED' || store.connection === 'CONNECTING') return;
 
+  autoReconnect = true;
+  cancelReconnect();
   store.setConnection('CONNECTING');
   store.log('info', 'Requesting serial port...');
 
@@ -160,11 +223,7 @@ export async function connect() {
     readLoop().catch(err => console.error('[serial] readLoop exited:', err));
     startPolling();
 
-    // Listen for disconnect
-    port.addEventListener('disconnect', () => {
-      store.log('warning', 'USB device disconnected');
-      disconnect('unexpected');
-    });
+    attachDisconnectListener();
 
   } catch (err) {
     console.error('[serial] Connect error:', err);
@@ -190,6 +249,18 @@ export async function disconnect(reason = 'manual') {
 
   buffer = '';
 
+  if (reason === 'manual') {
+    autoReconnect = false;
+    cancelReconnect();
+  }
+
+  if (shouldAutoReconnect(reason, autoReconnect)) {
+    store.emit('disconnect-reason', reason);
+    beginAutoReconnect();
+    return;
+  }
+
+  cancelReconnect();
   if (store.connection !== 'DISCONNECTED') {
     store.emit('disconnect-reason', reason);
     store.setConnection('DISCONNECTED');
@@ -244,7 +315,19 @@ export function setPollIntervalMs(ms) {
 }
 
 // Cleanup on page unload
+// Reconnect immediately when a previously-granted device re-appears on the USB bus.
+if (typeof navigator !== 'undefined' && navigator.serial?.addEventListener) {
+  navigator.serial.addEventListener('connect', () => {
+    if (store.connection === 'RECONNECTING' && autoReconnect) {
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+      tryReconnect();
+    }
+  });
+}
+
 window.addEventListener('beforeunload', () => {
+  autoReconnect = false;
+  cancelReconnect();
   readLoopActive = false;
   stopPolling();
   try { port?.close(); } catch (_) { /* ignore */ }
