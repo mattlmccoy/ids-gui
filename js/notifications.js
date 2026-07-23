@@ -4,6 +4,7 @@ import store from './state.js';
 import { getFloatDisplayState } from './float-state.js';
 import { decodeAlarmStatus, isActiveError } from './errors.js';
 import { shouldSuppressHeaterError } from './heater-visibility.js';
+import { calculateDualPressure } from './pressure-sensing.js';
 
 const LOCAL_ENABLED_KEY = 'ids-weir-ovf-notifications';
 const REMOTE_CONFIG_KEY = 'ids-remote-alert-config-v1';
@@ -42,6 +43,7 @@ const TELEMETRY_KEYS = [
   'SystemID', 'SoftwareRev', 'AlarmStatus', 'ErrorCode_STATE',
   'Run_MODE', 'Purge_MODE', 'Flush_MODE', 'Drain_MODE', 'Bypass_MODE',
   'Vacuum_STATE', 'Pressure_STATE', 'FluidTemperature_STATE',
+  'InletPressure_STATE', 'ReturnPressure_STATE',
   'MainHeaterTemperature_STATE', 'AUXHeaterTemperature_STATE',
   'InputPump_STATE', 'RecirculationPump_STATE', 'DrainPump_STATE',
   'BulkSupplyPump_STATE', 'VacuumPump_STATE', 'flushPump_STATE',
@@ -250,6 +252,13 @@ async function postTelemetrySnapshot(config) {
     telemetry[key] = FLOAT_TELEMETRY_KEYS.has(key)
       ? getFloatDisplayState(key, store.data[key])
       : store.data[key];
+  }
+  const dualPressure = calculateDualPressure(store.data);
+  if (dualPressure.available) {
+    telemetry.InletPressureAdjusted = dualPressure.inletPsi;
+    telemetry.ReturnPressureAdjusted = dualPressure.returnPsi;
+    telemetry.DifferentialPressureDerived = dualPressure.differentialPsi;
+    telemetry.MeniscusPressureEstimated = dualPressure.estimatedMeniscusPsi;
   }
   try {
     const response = await fetch(`${config.workerUrl}/api/v1/telemetry`, {

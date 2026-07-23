@@ -1,6 +1,7 @@
 /* ===== serial.js — Web Serial API layer ===== */
 
 import store from './state.js';
+import { handleSimulatedCommand } from './firmware-simulator.js';
 
 const BAUD_RATE = 115200;
 const ARDUINO_VENDOR_ID = 0x2341;
@@ -200,6 +201,7 @@ export async function disconnect(reason = 'manual') {
  * Appends newline terminator automatically.
  */
 export async function send(jsonStr) {
+  if (store.simulationActive) return handleSimulatedCommand(jsonStr);
   if (!writer || store.connection !== 'CONNECTED') {
     console.warn('[serial] Cannot send — not connected');
     return false;

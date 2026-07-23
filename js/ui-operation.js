@@ -15,6 +15,8 @@ import {
 } from './mode-control.js';
 import { downloadDiagnosticBundle } from './diagnostics.js';
 import { syncExperienceControls } from './experience-mode.js';
+import { calculateDualPressure } from './pressure-sensing.js';
+import { stopFirmwareSimulator } from './firmware-simulator.js';
 
 /* ---------- Setpoint Definitions ---------- */
 const SETPOINTS = [
@@ -77,6 +79,8 @@ export function initOperationTab() {
     updateAlarmBanner({ raw: store.alarmRaw || '' });
   });
   store.on('float-config', () => updateDisplay(store.data));
+  store.on('pressure-sensing-config', () => updateDisplay(store.data));
+  store.on('simulation', () => updateConnectionUI(store.connection));
   syncExperienceControls();
   window.addEventListener('beforeunload', event => {
     if (!autoOffTimers.size) return;
@@ -127,6 +131,12 @@ function buildHTML() {
         <span class="kpi-value" id="kpi-pressure" style="color:var(--accent-purple)">--</span>
         <span class="kpi-unit">psi</span>
         ${tachometerHTML('pressure', 'Measured', '0–100 psi')}
+      </div>
+      <div class="kpi-tile kpi-dual-pressure" id="kpi-tile-dual-pressure">
+        <span class="kpi-label">Printhead Pressures</span>
+        <span class="kpi-value" id="kpi-pressure-differential">--</span>
+        <span class="kpi-unit" id="kpi-pressure-ports">ΔP · sensors not configured</span>
+        <span class="kpi-unit" id="kpi-meniscus-estimate">Estimated meniscus: --</span>
       </div>
       <div class="kpi-tile" id="kpi-tile-status">
         <span class="kpi-label">Status</span>
@@ -393,7 +403,7 @@ function bindEvents() {
   initAutoOffControls();
 
   document.getElementById('btn-connect').addEventListener('click', () => serialConnect());
-  document.getElementById('btn-disconnect').addEventListener('click', () => serialDisconnect());
+  document.getElementById('btn-disconnect').addEventListener('click', () => store.simulationActive ? stopFirmwareSimulator() : serialDisconnect());
   document.getElementById('btn-open-system-map')?.addEventListener('click', () => {
     const trigger = document.getElementById('tab-debug');
     if (trigger) bootstrap.Tab.getOrCreateInstance(trigger).show();
@@ -588,6 +598,7 @@ function updateDisplay(data) {
     const configuredMax = Number(data.PressureMAX_SETPOINT);
     updateTachometer('pressure', data.Pressure_STATE, 0, Number.isFinite(configuredMax) && configuredMax > 0 ? configuredMax : 100);
   }
+  updateDualPressureDisplay(data);
 
   // Setpoint readbacks
   for (const sp of SETPOINTS) {
@@ -647,6 +658,26 @@ function updateDisplay(data) {
   for (const key of [...autoOffTimers.keys()]) {
     if (data[key] !== undefined && Number(data[key]) === 0) cancelAutoOffTimer(key);
   }
+}
+
+function updateDualPressureDisplay(data) {
+  const result = calculateDualPressure(data);
+  const differential = document.getElementById('kpi-pressure-differential');
+  const ports = document.getElementById('kpi-pressure-ports');
+  const meniscus = document.getElementById('kpi-meniscus-estimate');
+  const tile = document.getElementById('kpi-tile-dual-pressure');
+  if (!differential || !ports || !meniscus || !tile) return;
+  if (!result.available) {
+    differential.textContent = '--';
+    ports.textContent = result.reason;
+    meniscus.textContent = 'Estimated meniscus: --';
+    tile.classList.add('kpi-disabled');
+    return;
+  }
+  tile.classList.remove('kpi-disabled');
+  differential.textContent = `${result.differentialPsi.toFixed(2)} psi ΔP`;
+  ports.textContent = `In ${result.inletPsi.toFixed(2)} · Return ${result.returnPsi.toFixed(2)} psi`;
+  meniscus.textContent = `Estimated meniscus: ${result.estimatedMeniscusPsi.toFixed(2)} psi`;
 }
 
 function updateTachometer(id, rawValue, min, max) {
@@ -768,9 +799,13 @@ function dataForErrorDisplay() {
 }
 
 function updateConnectionUI(state) {
-  const connected = state === 'CONNECTED';
+  const connected = state === 'CONNECTED' || store.simulationActive;
   document.getElementById('btn-connect').disabled = connected || state === 'CONNECTING';
   document.getElementById('btn-disconnect').disabled = !connected;
+  const disconnectButton = document.getElementById('btn-disconnect');
+  if (disconnectButton) disconnectButton.innerHTML = store.simulationActive
+    ? '<i class="bi bi-stop-circle me-1"></i>Stop simulation'
+    : '<i class="bi bi-x-circle me-1"></i>Disconnect';
 
   const btns = [
     'btn-run', 'btn-stop', 'btn-all-off', 'btn-reboot',
@@ -804,7 +839,7 @@ function setModeStatusMessage(message) {
 }
 
 function applyModeInterlocks(data = null) {
-  const connected = store.connection === 'CONNECTED';
+  const connected = store.connection === 'CONNECTED' || store.simulationActive;
   const running = isRunModeActive(data);
   const source = data || store.data || {};
   const active = activeMaintenanceMode(source);

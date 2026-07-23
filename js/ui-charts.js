@@ -5,6 +5,7 @@ import { isDataKeyVisible } from './heater-visibility.js';
 import { getPollIntervalMs, setPollIntervalMs, getNominalPollIntervalMs } from './serial.js';
 import { FLOATS, getFloatDisplayState, formatFloatState } from './float-state.js';
 import { initTrendHistory, persistTrendPoint, clearTrendHistory } from './trend-history.js';
+import { calculateDualPressure } from './pressure-sensing.js';
 
 const MAX_POINTS = 18_000; // one hour at the fastest supported 200 ms poll rate
 const STATE_TRACKS_KEY = 'ids-visible-state-tracks-v1';
@@ -27,6 +28,10 @@ const PRESSURE_TRACES = [
   { key: 'Vacuum_STATE',    label: 'Vacuum (cmH\u2082O)',      color: '#4c8dff', yAxisID: 'yVacuum' },
   { key: 'Vacuum_SETPOINT', label: 'Vac Setpoint (% raw)',     color: '#34d399', borderDash: [5, 5], yAxisID: 'ySetpoint' },
   { key: 'Pressure_STATE',  label: 'Pressure (psi)',           color: '#f87171', yAxisID: 'yPressure' },
+  { key: 'InletPressureAdjusted', label: 'Printhead inlet (psi)', color: '#f59e0b', yAxisID: 'yPressure' },
+  { key: 'ReturnPressureAdjusted', label: 'Printhead return (psi)', color: '#a78bfa', yAxisID: 'yPressure' },
+  { key: 'DifferentialPressureDerived', label: 'Printhead ΔP (psi)', color: '#22d3ee', yAxisID: 'yPressure' },
+  { key: 'MeniscusPressureEstimated', label: 'Meniscus estimate (psi)', color: '#34d399', borderDash: [4, 4], yAxisID: 'yPressure' },
 ];
 
 const PUMP_TRACES = [
@@ -261,7 +266,7 @@ function createCharts() {
         yPressure: {
           position: 'right',
           offset: true,
-          beginAtZero: true,
+          beginAtZero: false,
           grid: { drawOnChartArea: false },
           ticks: { color: tickColor, font: { size: 10 } },
           title: { display: true, text: 'Pressure (psi)', color: tickColor }
@@ -386,6 +391,13 @@ function onData(data) {
   updateFloatStatus(data);
   if (paused) return;
   const point = { timestamp: Date.now() };
+  const dualPressure = calculateDualPressure(data);
+  if (dualPressure.available) {
+    point.InletPressureAdjusted = dualPressure.inletPsi;
+    point.ReturnPressureAdjusted = dualPressure.returnPsi;
+    point.DifferentialPressureDerived = dualPressure.differentialPsi;
+    point.MeniscusPressureEstimated = dualPressure.estimatedMeniscusPsi;
+  }
   const p = parseFloat(data.Pressure_STATE);
   if (Number.isFinite(p)) maxObservedPressure = Math.max(maxObservedPressure, p);
   let hasValue = false;

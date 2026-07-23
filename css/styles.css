@@ -313,8 +313,11 @@ html, body {
 #kpi-tile-aux-heater { order: 3; }
 #kpi-tile-vacuum { order: 4; }
 #kpi-tile-pressure { order: 5; }
-#kpi-tile-status { order: 6; }
-#kpi-error-card { order: 7; }
+#kpi-tile-dual-pressure { order: 6; flex-basis: 210px; }
+#kpi-tile-dual-pressure .kpi-value { color: var(--accent-cyan); font-size: 1rem; }
+#kpi-tile-status { order: 7; }
+#kpi-error-card { order: 8; }
+.simulation-active .navbar { box-shadow: inset 0 -3px var(--accent-amber); }
 
 /* ---------- State Indicators ---------- */
 .state-dot {

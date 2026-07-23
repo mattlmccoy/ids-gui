@@ -60,6 +60,7 @@ function boot() {
 
   // Wire up connection badge
   store.on('connection', updateConnectionBadge);
+  store.on('simulation', updateSimulationBadge);
 
   // Wire up navbar badges (SystemID, SoftwareRev)
   store.on('data', updateNavbarBadges);
@@ -79,6 +80,14 @@ function boot() {
   addCSVExportButton();
 
   store.log('info', 'IDS GUI R18 initialized');
+}
+
+function updateSimulationBadge(state) {
+  const badge = document.getElementById('simulation-badge');
+  if (!badge) return;
+  badge.classList.toggle('d-none', !state?.active);
+  badge.innerHTML = state?.active ? `<i class="bi bi-bezier2 me-1"></i>SIMULATION · ${String(state.scenario || '').toUpperCase()}` : '';
+  document.body.classList.toggle('simulation-active', !!state?.active);
 }
 
 function initDeploymentUpdates() {

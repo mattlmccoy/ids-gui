@@ -30,6 +30,8 @@ class StateStore {
 
     /** True while a saved telemetry recording is being replayed */
     this.replayActive = false;
+    this.simulationActive = false;
+    this.simulationScenario = '';
 
     /** Heater visibility flags used for UI/chart/log filtering */
     this.heaterVisibility = {
@@ -108,6 +110,19 @@ class StateStore {
   setReplayActive(active) {
     this.replayActive = !!active;
     this.emit('replay', this.replayActive);
+  }
+
+  setSimulationActive(active, scenario = '') {
+    this.simulationActive = !!active;
+    this.simulationScenario = this.simulationActive ? String(scenario) : '';
+    this.emit('simulation', { active: this.simulationActive, scenario: this.simulationScenario });
+  }
+
+  replaceData(obj = {}) {
+    this.data = { ...obj };
+    this.alarmRaw = this.data.AlarmStatus ?? this.data.ErrorCode_STATE ?? '';
+    this.emit('data', this.data);
+    this.emit('error', { raw: this.alarmRaw });
   }
 }
 

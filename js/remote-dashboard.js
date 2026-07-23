@@ -108,6 +108,8 @@ function renderDevices(devices, generatedAt, commands) {
             ${metric('Vacuum', display(data.Vacuum_STATE))}
             ${metric('Pressure', display(data.Pressure_STATE))}
             ${metric('Fluid temp', withUnit(data.FluidTemperature_STATE, '°C'))}
+            ${data.DifferentialPressureDerived !== undefined ? metric('Printhead ΔP', withUnit(data.DifferentialPressureDerived, 'psi')) : ''}
+            ${data.MeniscusPressureEstimated !== undefined ? metric('Meniscus estimate', withUnit(data.MeniscusPressureEstimated, 'psi')) : ''}
           </div>
           <div class="d-flex flex-wrap gap-2 mb-2">${floatBadges(data)}</div>
           <div class="d-flex flex-wrap gap-2 mb-2">${outputBadges(data)}</div>

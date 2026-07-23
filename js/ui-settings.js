@@ -16,6 +16,7 @@ import { enableRemoteControl, disableRemoteControl, getRemoteControlState } from
 import { getHeaterVisibility, setHeaterVisibility } from './heater-visibility.js';
 import { formatCountdown } from './mode-control.js';
 import { syncExperienceControls } from './experience-mode.js';
+import { getPressureSensingConfig, setPressureSensingConfig } from './pressure-sensing.js';
 
 /* ---------- Settings Groups ---------- */
 const SETTINGS_GROUPS = [
@@ -149,6 +150,34 @@ function buildHTML() {
             <div class="small mt-2" style="color:var(--text-muted)">
               Sends <span class="font-monospace">WeirFloatInvert_SETUP</span> to firmware.
             </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-xl-8 col-lg-12 experience-advanced">
+        <div class="dash-card settings-group mb-3">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-speedometer2 me-1"></i> Dual Printhead Pressure Sensors</span>
+            <span class="badge text-bg-secondary" id="dual-pressure-status">Not configured</span>
+          </div>
+          <div class="card-body">
+            <div class="form-check form-switch mb-3"><input class="form-check-input" type="checkbox" role="switch" id="dual-pressure-enabled"><label class="form-check-label" for="dual-pressure-enabled">Inlet and return sensors installed</label></div>
+            <div class="row g-2">
+              <div class="col-md-4"><label class="form-label small" for="dual-pressure-inlet-offset">Inlet zero correction (psi)</label><input class="form-control form-control-sm" type="number" id="dual-pressure-inlet-offset" min="-20" max="20" step="0.01"></div>
+              <div class="col-md-4"><label class="form-label small" for="dual-pressure-return-offset">Return zero correction (psi)</label><input class="form-control form-control-sm" type="number" id="dual-pressure-return-offset" min="-20" max="20" step="0.01"></div>
+              <div class="col-md-4"><label class="form-label small" for="dual-pressure-meniscus-offset">Hydrostatic/nozzle offset (psi)</label><input class="form-control form-control-sm" type="number" id="dual-pressure-meniscus-offset" min="-20" max="20" step="0.01"></div>
+            </div>
+            <div class="d-flex align-items-center gap-2 mt-3 flex-wrap"><button class="btn-control btn-connect" id="btn-save-dual-pressure"><i class="bi bi-check-lg me-1"></i>Save sensor configuration</button><span class="small text-muted" id="dual-pressure-feedback">Requires firmware telemetry fields <code>InletPressure_STATE</code> and <code>ReturnPressure_STATE</code> in psi.</span></div>
+            <div class="small text-muted mt-2">Differential = corrected inlet − corrected return. Estimated meniscus = average of the two corrected ports + hydrostatic/nozzle offset. This estimate assumes the pressure drop through the printhead gallery is approximately linear; validate it against the physical Xaar installation before using limits.</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-xl-4 col-lg-6 experience-advanced">
+        <div class="dash-card settings-group mb-3">
+          <div class="card-header d-flex justify-content-between align-items-center"><span><i class="bi bi-cpu me-1"></i> R17 Firmware Compatibility</span><span class="badge text-bg-warning">Mitigated · not repaired</span></div>
+          <div class="card-body">
+            <strong class="small">Flush timer cannot be fixed from this web application.</strong>
+            <div class="small text-muted mt-2">The compiled R17 timer is not reset when Flush starts, and no source/flash path is available. The GUI therefore sends only one operator-confirmed request, never retries it, excludes it from browser auto-off, requires live readback, and refuses to certify a missing response during commissioning.</div>
+            <div class="small text-warning mt-2"><i class="bi bi-exclamation-triangle me-1"></i>Do not interpret a GUI command acknowledgement as verified flushing or fluid flow.</div>
           </div>
         </div>
       </div>
@@ -319,6 +348,7 @@ function bindEvents() {
   syncRemoteAlertForm();
   syncRemoteControlStatus(getRemoteControlState());
   syncHeaterChannelSettings();
+  syncPressureSensingSettings();
   document.getElementById('toggle-weir-ovf-invert')?.addEventListener('change', e => {
     setWeirOverflowInverted(e.target.checked);
   });
@@ -369,6 +399,17 @@ function bindEvents() {
   document.getElementById('btn-disable-remote-control')?.addEventListener('click', () => {
     syncRemoteControlStatus(disableRemoteControl('Disabled by local operator'));
   });
+  document.getElementById('btn-save-dual-pressure')?.addEventListener('click', () => {
+    const config = setPressureSensingConfig({
+      enabled: document.getElementById('dual-pressure-enabled')?.checked,
+      inletOffsetPsi: document.getElementById('dual-pressure-inlet-offset')?.value,
+      returnOffsetPsi: document.getElementById('dual-pressure-return-offset')?.value,
+      meniscusOffsetPsi: document.getElementById('dual-pressure-meniscus-offset')?.value
+    });
+    syncPressureSensingSettings(config);
+    const feedback = document.getElementById('dual-pressure-feedback');
+    if (feedback) feedback.textContent = config.enabled ? 'Sensor pipeline enabled; waiting for both firmware telemetry fields.' : 'Sensor pipeline disabled.';
+  });
 
   document.querySelectorAll('.btn-send-setting').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -403,6 +444,26 @@ function bindEvents() {
     });
   });
 
+}
+
+function syncPressureSensingSettings(config = getPressureSensingConfig()) {
+  const fields = {
+    'dual-pressure-enabled': config.enabled,
+    'dual-pressure-inlet-offset': config.inletOffsetPsi,
+    'dual-pressure-return-offset': config.returnOffsetPsi,
+    'dual-pressure-meniscus-offset': config.meniscusOffsetPsi
+  };
+  for (const [id, value] of Object.entries(fields)) {
+    const element = document.getElementById(id);
+    if (!element) continue;
+    if (element.type === 'checkbox') element.checked = !!value;
+    else element.value = value;
+  }
+  const status = document.getElementById('dual-pressure-status');
+  if (status) {
+    status.textContent = config.enabled ? 'Enabled · awaiting telemetry' : 'Not configured';
+    status.className = `badge ${config.enabled ? 'text-bg-warning' : 'text-bg-secondary'}`;
+  }
 }
 
 async function testRemoteAlert(button, notificationKey, label) {

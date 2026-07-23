@@ -6,6 +6,7 @@ import { MODE_DEFINITIONS } from './mode-control.js';
 import { downloadDiagnosticBundle, getDiagnosticSnapshot } from './diagnostics.js';
 import { confirm } from './ui-dialogs.js';
 import { syncExperienceControls } from './experience-mode.js';
+import { getFirmwareSimulatorState, startFirmwareSimulator, stopFirmwareSimulator } from './firmware-simulator.js';
 
 const MODE_PREVIEWS = ['live', 'run', 'purge', 'flush', 'drain', 'bypass'];
 const NODE_STATES = {
@@ -32,7 +33,8 @@ export function initDebugTab() {
     updateSchematic(data);
     renderTelemetry();
   });
-  store.on('connection', () => updateLiveSummary(store.data));
+  store.on('connection', () => { updateLiveSummary(store.data); updateSimulatorUI(); });
+  store.on('simulation', updateSimulatorUI);
   store.on('log', renderEventHistory);
   store.on('command-sent', renderEventHistory);
   refreshTimer = setInterval(() => updateLiveSummary(store.data), 1000);
@@ -42,6 +44,7 @@ export function initDebugTab() {
   renderTelemetry();
   renderEventHistory();
   syncExperienceControls();
+  updateSimulatorUI();
 }
 
 function buildHTML() {
@@ -57,6 +60,19 @@ function buildHTML() {
       ${summaryCard('debug-firmware', 'Firmware', '—', 'bi-cpu')}
       ${summaryCard('debug-poll', 'Polling', `${getPollIntervalMs()} ms`, 'bi-arrow-repeat')}
       ${summaryCard('debug-alarm', 'Alarm', 'Unknown', 'bi-shield-check')}
+    </div>
+
+    <div class="dash-card accent-purple mb-3 experience-advanced">
+      <div class="card-header d-flex justify-content-between align-items-center"><span><i class="bi bi-bezier2 me-1"></i>Firmware simulator</span><span class="badge text-bg-secondary" id="simulator-status">Stopped</span></div>
+      <div class="card-body">
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+          <select class="form-select form-select-sm" id="simulator-scenario" style="max-width:240px"><option value="normal">Normal startup</option><option value="no-response">Commanded, no hydraulic response</option><option value="vacuum-decay">Rapid vacuum decay</option><option value="excessive-cycling">Excessive pump cycling</option><option value="slow-start">Slow hydraulic start</option></select>
+          <button class="btn btn-sm btn-outline-primary" id="simulator-start"><i class="bi bi-play-fill me-1"></i>Start simulation</button>
+          <button class="btn btn-sm btn-outline-danger" id="simulator-stop" disabled><i class="bi bi-stop-fill me-1"></i>Stop</button>
+        </div>
+        <div class="small text-muted mt-2">Available only while USB is disconnected. Simulated frames use the real dashboard, trends, commissioning guards, and diagnostic rules; hardware commands remain disabled and remote alerts are suppressed. A yellow SIMULATION badge remains visible globally.</div>
+        <div class="small mt-2" id="simulator-feedback" role="status"></div>
+      </div>
     </div>
 
     <div class="dash-card accent-cyan mb-3">
@@ -185,6 +201,17 @@ function bindEvents(panel) {
     renderTelemetry();
   });
   document.getElementById('debug-raw-send')?.addEventListener('click', sendRawCommand);
+  document.getElementById('simulator-start')?.addEventListener('click', () => {
+    const feedback = document.getElementById('simulator-feedback');
+    try {
+      const selected = document.getElementById('simulator-scenario')?.value || 'normal';
+      const active = startFirmwareSimulator(selected);
+      if (feedback) { feedback.textContent = `Running ${active}. Wait for the scenario evidence to accumulate, then export a diagnostic bundle.`; feedback.className = 'small mt-2 text-warning'; }
+    } catch (error) {
+      if (feedback) { feedback.textContent = error.message; feedback.className = 'small mt-2 text-danger'; }
+    }
+  });
+  document.getElementById('simulator-stop')?.addEventListener('click', () => stopFirmwareSimulator());
 }
 
 async function sendRawCommand() {
@@ -209,15 +236,30 @@ async function sendRawCommand() {
 }
 
 function updateLiveSummary(data) {
-  setText('debug-connection', store.connection);
+  setText('debug-connection', store.simulationActive ? 'SIMULATION' : store.connection);
   setText('debug-frame-age', lastDataAt ? `${Math.max(0, Math.floor((Date.now() - lastDataAt) / 1000))} s ago` : 'No frames');
   setText('debug-firmware', data.SoftwareRev || '—');
   setText('debug-poll', `${getPollIntervalMs()} ms`);
   const alarm = String(data.AlarmStatus ?? data.ErrorCode_STATE ?? 'Unknown');
   setText('debug-alarm', alarm);
   const rawButton = document.getElementById('debug-raw-send');
-  if (rawButton) rawButton.disabled = store.connection !== 'CONNECTED';
+  if (rawButton) rawButton.disabled = store.connection !== 'CONNECTED' && !store.simulationActive;
   renderFindings();
+}
+
+function updateSimulatorUI() {
+  const state = getFirmwareSimulatorState();
+  const status = document.getElementById('simulator-status');
+  const start = document.getElementById('simulator-start');
+  const stop = document.getElementById('simulator-stop');
+  const scenario = document.getElementById('simulator-scenario');
+  if (status) {
+    status.textContent = state.active ? `Running · ${state.scenario}` : 'Stopped';
+    status.className = `badge ${state.active ? 'text-bg-warning' : 'text-bg-secondary'}`;
+  }
+  if (start) start.disabled = store.connection !== 'DISCONNECTED' || state.active;
+  if (stop) stop.disabled = !state.active;
+  if (scenario) scenario.disabled = state.active;
 }
 
 function updateSchematic(data) {

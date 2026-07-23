@@ -25,6 +25,7 @@ const debug = read('js/ui-debug.js');
 const ink = read('js/ui-ink.js');
 const modeControl = read('js/mode-control.js');
 const experienceMode = read('js/experience-mode.js');
+const diagnostics = read('js/diagnostics.js');
 const pagesWorkflow = read('.github/workflows/deploy-pages.yml');
 const pagesBuilder = read('scripts/build-pages.mjs');
 const indexHtml = read('index.html');
@@ -113,6 +114,16 @@ for (const [tab, initializer] of [
 for (const marker of ['Conceptual plumbing map', 'data-map-preview', 'debug-telemetry-body', 'Advanced raw command', 'downloadDiagnosticBundle']) {
   if (!debug.includes(marker)) throw new Error(`Debug page is missing ${marker}`);
 }
+for (const marker of ['Firmware simulator', 'no-response', 'vacuum-decay', 'excessive-cycling', 'slow-start']) {
+  if (!debug.includes(marker)) throw new Error(`Debug simulator is missing ${marker}`);
+}
+for (const marker of ['Commanded but no hydraulic response', 'Rapid vacuum decay', 'Excessive cycling', 'Slow hydraulic start']) {
+  if (!diagnostics.includes(marker)) throw new Error(`Extended diagnostic engine is missing ${marker}`);
+}
+for (const sourceMarker of ['InletPressure_STATE', 'ReturnPressure_STATE', 'DifferentialPressureDerived', 'MeniscusPressureEstimated']) {
+  if (!(operation + charts + settings + read('js/notifications.js')).includes(sourceMarker)) throw new Error(`Dual-pressure pipeline is missing ${sourceMarker}`);
+}
+if (!diagnostics.includes("schema: 'ids-diagnostic-v2'") || !debug.includes('debug-export')) throw new Error('One-click diagnostic bundle v2 is missing');
 if (operation.includes('ACK OFF') || operation.includes('ACK ON')) throw new Error('Operation page still exposes engineering ACK terminology');
 if (!ink.includes('defaultSampleVolumeUl: 1000')) throw new Error('Ink checker sample default is not 1 mL');
 if (!ink.includes('Calibration required:')) throw new Error('Ink checker calibration warning is missing');
