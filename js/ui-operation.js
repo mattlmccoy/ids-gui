@@ -1,7 +1,8 @@
 /* ===== ui-operation.js — Operation tab (dashboard layout) ===== */
 
 import store from './state.js';
-import { connect as serialConnect, disconnect as serialDisconnect, send } from './serial.js';
+import { connect as serialConnect, disconnect as serialDisconnect } from './serial.js';
+import { send } from './transport.js';
 import { flashSentButton } from './utils.js';
 import { decodeAlarmStatus, isActiveError } from './errors.js';
 import { CONFIRMATIONS, confirm } from './ui-dialogs.js';

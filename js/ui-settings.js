@@ -1,7 +1,7 @@
 /* ===== ui-settings.js — Settings tab (all writable firmware parameters) ===== */
 
 import store from './state.js';
-import { send } from './serial.js';
+import { send } from './transport.js';
 import { flashSentButton } from './utils.js';
 import { loadNominalConfig } from './nominal-config.js';
 import { isWeirOverflowInverted, setWeirOverflowInverted } from './float-state.js';
