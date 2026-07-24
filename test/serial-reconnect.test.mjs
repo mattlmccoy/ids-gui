@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { shouldAutoReconnect, selectReconnectPort, nextReconnectDelayMs } from '../js/serial-reconnect.js';
+import { shouldAutoReconnect, selectReconnectPort, nextReconnectDelayMs, isTelemetryStale, STALE_TELEMETRY_MS } from '../js/serial-reconnect.js';
 
 test('shouldAutoReconnect only for unexpected drops while enabled', () => {
   assert.equal(shouldAutoReconnect('unexpected', true), true);
@@ -24,4 +24,16 @@ test('nextReconnectDelayMs: immediate first attempt, then a steady bounded inter
   assert.equal(nextReconnectDelayMs(0), 0);           // first attempt right away
   assert.equal(nextReconnectDelayMs(1), 3000);
   assert.equal(nextReconnectDelayMs(5), 3000);        // stays bounded, no runaway growth
+});
+
+test('isTelemetryStale detects a silent drop (device stopped sending without a USB disconnect)', () => {
+  const now = 100_000;
+  // Fresh frame — not stale.
+  assert.equal(isTelemetryStale(now - 1000, now, STALE_TELEMETRY_MS), false);
+  assert.equal(isTelemetryStale(now - (STALE_TELEMETRY_MS - 1), now, STALE_TELEMETRY_MS), false);
+  // No frame for longer than the threshold — stale, trigger reconnect.
+  assert.equal(isTelemetryStale(now - (STALE_TELEMETRY_MS + 1), now, STALE_TELEMETRY_MS), true);
+  // Never received a frame (0 / null) — not stale yet; connect path handles first frame.
+  assert.equal(isTelemetryStale(0, now, STALE_TELEMETRY_MS), false);
+  assert.equal(isTelemetryStale(null, now, STALE_TELEMETRY_MS), false);
 });

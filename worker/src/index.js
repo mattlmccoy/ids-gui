@@ -67,20 +67,6 @@ const EVENT_DEFINITIONS = {
   }
 };
 
-const TELEMETRY_KEYS = new Set([
-  'SystemID', 'SoftwareRev', 'AlarmStatus', 'ErrorCode_STATE',
-  'Run_MODE', 'Purge_MODE', 'Flush_MODE', 'Drain_MODE',
-  'Vacuum_STATE', 'Pressure_STATE', 'FluidTemperature_STATE',
-  'MainHeaterTemperature_STATE', 'AUXHeaterTemperature_STATE',
-  'InputPump_STATE', 'RecirculationPump_STATE', 'DrainPump_STATE',
-  'BulkSupplyPump_STATE', 'VacuumPump_STATE', 'flushPump_STATE',
-  'ManifoldValve1_STATE', 'ManifoldValve2_STATE', 'DrainValve_STATE',
-  'BulkSupplyValve_STATE', 'flushValve_STATE',
-  'SupplyFloat_STATE', 'WeirFloat_STATE', 'WasteFloat_STATE',
-  'SupplyOverflowFloat_STATE', 'WeirOverflowFloat_STATE',
-  'FlushFloat_STATE', 'ServiceFloat_STATE'
-]);
-
 const REMOTE_COMMANDS = {
   run: { min: null, max: null },
   stop: { min: null, max: null },
@@ -250,12 +236,16 @@ async function updateTelemetry(request, env) {
   if (!deviceId) return json({ error: 'deviceId is required' }, 400, request, env);
   const connection = ['CONNECTED', 'DISCONNECTED', 'CONNECTING', 'ERROR'].includes(body.connection)
     ? body.connection : 'DISCONNECTED';
+  // Store the full frame so a laptop mirror has true parity with the desktop. Keys are our
+  // own controller telemetry (no secrets); guard value types/length and cap the count so a
+  // malformed body can't bloat the row.
   const telemetry = {};
   if (body.telemetry && typeof body.telemetry === 'object' && !Array.isArray(body.telemetry)) {
+    let count = 0;
     for (const [key, value] of Object.entries(body.telemetry)) {
-      if (!TELEMETRY_KEYS.has(key)) continue;
-      if (value === null || typeof value === 'number' || typeof value === 'boolean') telemetry[key] = value;
-      else if (typeof value === 'string') telemetry[key] = value.slice(0, 120);
+      if (count >= 300 || typeof key !== 'string' || key.length > 80) continue;
+      if (value === null || typeof value === 'number' || typeof value === 'boolean') { telemetry[key] = value; count++; }
+      else if (typeof value === 'string') { telemetry[key] = value.slice(0, 120); count++; }
     }
   }
   const now = new Date().toISOString();

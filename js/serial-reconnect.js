@@ -20,3 +20,17 @@ export function selectReconnectPort(ports, vendorId) {
 export function nextReconnectDelayMs(attempt) {
   return attempt <= 0 ? 0 : RECONNECT_INTERVAL_MS;
 }
+
+/** No telemetry for this long while CONNECTED = treat the link as dropped and reconnect. */
+export const STALE_TELEMETRY_MS = 8000;
+
+/**
+ * True when the controller has gone silent — no frame for longer than staleMs — which
+ * happens on a soft reset / power-cycle where the USB CDC port stays enumerated but stops
+ * responding, so no 'disconnect' event or read error ever fires. `lastFrameAt` of 0/null
+ * means no frame has arrived yet (the connect path handles the first frame), so not stale.
+ */
+export function isTelemetryStale(lastFrameAt, now, staleMs = STALE_TELEMETRY_MS) {
+  if (!lastFrameAt) return false;
+  return now - lastFrameAt > staleMs;
+}

@@ -39,19 +39,6 @@ const REMOTE_TEST_EVENTS = {
   controllerConnection: ['test_controller_disconnected', '[TEST] Controller disconnect alert delivery check. USB remained connected.'],
   staleData: ['test_data_stale', '[TEST] Stale telemetry alert delivery check. Telemetry was not interrupted.']
 };
-const TELEMETRY_KEYS = [
-  'SystemID', 'SoftwareRev', 'AlarmStatus', 'ErrorCode_STATE',
-  'Run_MODE', 'Purge_MODE', 'Flush_MODE', 'Drain_MODE',
-  'Vacuum_STATE', 'Pressure_STATE', 'FluidTemperature_STATE',
-  'InletPressure_STATE', 'ReturnPressure_STATE',
-  'MainHeaterTemperature_STATE', 'AUXHeaterTemperature_STATE',
-  'InputPump_STATE', 'RecirculationPump_STATE', 'DrainPump_STATE',
-  'BulkSupplyPump_STATE', 'VacuumPump_STATE', 'flushPump_STATE',
-  'ManifoldValve1_STATE', 'ManifoldValve2_STATE', 'DrainValve_STATE',
-  'BulkSupplyValve_STATE', 'flushValve_STATE',
-  'SupplyFloat_STATE', 'WeirFloat_STATE', 'WasteFloat_STATE',
-  'SupplyOverflowFloat_STATE', 'WeirOverflowFloat_STATE', 'FlushFloat_STATE', 'ServiceFloat_STATE'
-];
 const TELEMETRY_INTERVAL_MS = 2000;
 const FLOAT_TELEMETRY_KEYS = new Set([
   'SupplyFloat_STATE', 'WeirFloat_STATE', 'WasteFloat_STATE',
@@ -246,8 +233,12 @@ function scheduleTelemetry(immediate = false) {
 async function postTelemetrySnapshot(config) {
   if (telemetrySending) return scheduleTelemetry();
   telemetrySending = true;
+  // Relay the FULL frame so a laptop mirror reaches true parity (setpoints, SSRs, run
+  // button, etc. — not just an allowlisted subset). Floats are display-normalized here so
+  // read-only viewers render them correctly; the full mirror uses passthrough to avoid a
+  // second inversion (see js/float-state.js setFloatMirrorPassthrough).
   const telemetry = {};
-  for (const key of TELEMETRY_KEYS) {
+  for (const key of Object.keys(store.data)) {
     if (store.data[key] === undefined) continue;
     telemetry[key] = FLOAT_TELEMETRY_KEYS.has(key)
       ? getFloatDisplayState(key, store.data[key])
