@@ -2,6 +2,9 @@
 
 import store from './state.js';
 import { isSerialSupported } from './serial.js';
+import { setActiveTransport, getActiveTransport } from './transport.js';
+import { createCloudTransport } from './cloud-transport.js';
+import { getMirrorSession } from './mirror-session.js';
 import { decodeAlarmStatus, isActiveError } from './errors.js';
 import { shouldSuppressHeaterError } from './heater-visibility.js';
 import { initDialogs } from './ui-dialogs.js';
@@ -33,13 +36,16 @@ function boot() {
   initDeploymentUpdates();
   initPWA();
 
-  // Check Web Serial support
-  if (!isSerialSupported()) {
+  // Select transport: a paired mirror session runs over the cloud relay; otherwise Web Serial.
+  const mirrorSession = getMirrorSession();
+  if (mirrorSession) {
+    setActiveTransport(createCloudTransport(mirrorSession));
+  } else if (!isSerialSupported()) {
     document.querySelector('.container-fluid.mt-2').innerHTML = `
       <div class="alert alert-danger mt-4" role="alert">
         <h4 class="alert-heading"><i class="bi bi-exclamation-triangle-fill me-2"></i>Web Serial Not Supported</h4>
-        <p class="mb-0">This browser does not support the Web Serial API. Please use
-        <strong>Google Chrome</strong> or <strong>Microsoft Edge</strong> (version 89+).</p>
+        <p class="mb-0">This browser does not support the Web Serial API. Use
+        <strong>Chrome</strong> or <strong>Edge</strong> 89+, or pair this laptop to a connected desktop.</p>
       </div>
     `;
     return;
@@ -63,6 +69,9 @@ function boot() {
   // Wire up connection badge
   store.on('connection', updateConnectionBadge);
   store.on('simulation', updateSimulationBadge);
+
+  // In mirror mode, start streaming telemetry from the relay immediately.
+  if (mirrorSession) getActiveTransport().connect();
 
   // Wire up navbar badges (SystemID, SoftwareRev)
   store.on('data', updateNavbarBadges);
