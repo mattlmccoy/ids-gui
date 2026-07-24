@@ -1,7 +1,7 @@
 /* ===== ui-debug.js — engineering diagnostics and conceptual plumbing map ===== */
 
 import store from './state.js';
-import { send, getPollIntervalMs } from './serial.js';
+import { send, getPollIntervalMs } from './transport.js';
 import { MODE_DEFINITIONS } from './mode-control.js';
 import { downloadDiagnosticBundle, getDiagnosticSnapshot } from './diagnostics.js';
 import { confirm } from './ui-dialogs.js';

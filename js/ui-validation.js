@@ -2,7 +2,7 @@
 
 import store from './state.js';
 import { FLOATS, formatFloatState, getFloatDisplayState } from './float-state.js';
-import { send } from './serial.js';
+import { send } from './transport.js';
 import {
   binaryMatches, hasActiveAlarm, modeCommand, numericMatches, safeShutdownCommands,
   CIRCUIT_TESTS, setpointCommand, vacuumResponse

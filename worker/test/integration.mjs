@@ -172,6 +172,34 @@ try {
   response = await fetch(`${relayUrl}/health`, { headers: { Origin: 'https://evil.example' } });
   assert.equal(response.status, 403);
 
+  // Pairing round-trip: device mints a 4-digit code; an unauthenticated client redeems it once.
+  const pairRes = await api('/api/v1/pair', 'local-device-token', { method: 'POST', body: JSON.stringify({ deviceId: runId }) });
+  assert.equal(pairRes.status, 201);
+  const pairBody = await pairRes.json();
+  assert.match(pairBody.code, /^\d{4}$/);
+  const redeemRes = await api('/api/v1/pair/redeem', 'ignored', { method: 'POST', body: JSON.stringify({ code: pairBody.code }) });
+  assert.equal(redeemRes.status, 200);
+  const redeemBody = await redeemRes.json();
+  assert.equal(redeemBody.deviceId, runId);
+  assert.ok(redeemBody.operatorToken && redeemBody.viewerToken);
+  const redeemAgain = await api('/api/v1/pair/redeem', 'ignored', { method: 'POST', body: JSON.stringify({ code: pairBody.code }) });
+  assert.equal(redeemAgain.status, 404); // single-use
+
+  // Payload command round-trip: operator enqueues a validated single-key payload; device sees it queued.
+  const okCmd = await api('/api/v1/commands', 'local-operator-token', {
+    method: 'POST', headers: { 'Idempotency-Key': `${runId}-payload-ok` },
+    body: JSON.stringify({ deviceId: runId, type: 'payload', payload: '{"Purge_MODE":"1"}' })
+  });
+  assert.equal(okCmd.status, 201);
+  assert.equal((await okCmd.json()).command.command_payload, '{"Purge_MODE":"1"}');
+  const pendingRes = await api(`/api/v1/commands?deviceId=${runId}`, 'local-device-token');
+  assert.ok((await pendingRes.json()).commands.some(c => c.command_payload === '{"Purge_MODE":"1"}'));
+  const badCmd = await api('/api/v1/commands', 'local-operator-token', {
+    method: 'POST', headers: { 'Idempotency-Key': `${runId}-payload-bad` },
+    body: JSON.stringify({ deviceId: runId, type: 'payload', payload: '{"Nope_MODE":"1"}' })
+  });
+  assert.equal(badCmd.status, 400); // unknown key rejected
+
   assert.equal(slackMessages.length, ntfyMessages.length);
   console.log(`Worker integration passed: ${ntfyMessages.length} ntfy + ${slackMessages.length} Slack messages, duplicate suppression and acknowledgement verified.`);
 } finally {

@@ -2,7 +2,7 @@
 
 import store from './state.js';
 import { isDataKeyVisible } from './heater-visibility.js';
-import { getPollIntervalMs, setPollIntervalMs, getNominalPollIntervalMs } from './serial.js';
+import { getPollIntervalMs, setPollIntervalMs, getNominalPollIntervalMs } from './transport.js';
 import { FLOATS, getFloatDisplayState, formatFloatState } from './float-state.js';
 import { initTrendHistory, persistTrendPoint, clearTrendHistory } from './trend-history.js';
 import { calculateDualPressure, filterActivePressureTraces } from './pressure-sensing.js';

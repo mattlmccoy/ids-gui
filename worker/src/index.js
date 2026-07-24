@@ -1,3 +1,5 @@
+import { validateCommandPayload } from './command-allowlist.js';
+
 const EVENT_DEFINITIONS = {
   weir_ovf_active: {
     alertKey: 'weir_ovf', phase: 'active', severity: 'urgent',
@@ -131,6 +133,13 @@ async function route(request, env) {
   if (request.method === 'GET' && url.pathname === '/api/v1/status') {
     if (!(await authorized(request, env.VIEWER_TOKEN))) return unauthorized(request, env);
     return getStatus(request, env);
+  }
+  if (request.method === 'POST' && url.pathname === '/api/v1/pair') {
+    if (!(await authorized(request, env.DEVICE_TOKEN))) return unauthorized(request, env);
+    return createPairCode(request, env);
+  }
+  if (request.method === 'POST' && url.pathname === '/api/v1/pair/redeem') {
+    return redeemPairCode(request, env);
   }
   const ackMatch = url.pathname.match(/^\/api\/v1\/events\/([A-Za-z0-9-]+)\/ack$/);
   if (request.method === 'POST' && ackMatch) {
@@ -270,18 +279,28 @@ async function createRemoteCommand(request, env) {
   try { body = await request.json(); } catch (_) { return json({ error: 'Expected JSON body' }, 400, request, env); }
   const deviceId = clean(body.deviceId, 80);
   const commandType = clean(body.type, 40);
-  const definition = REMOTE_COMMANDS[commandType];
   const idempotencyKey = clean(request.headers.get('Idempotency-Key') || body.idempotencyKey, 120);
-  if (!deviceId || !definition || !idempotencyKey) {
+  if (!deviceId || !commandType || !idempotencyKey) {
     return json({ error: 'Valid deviceId, type, and Idempotency-Key are required' }, 400, request, env);
   }
+
   let value = null;
-  if (definition.min !== null) {
-    value = Number(body.value);
-    if (!Number.isFinite(value) || value < definition.min || value > definition.max) {
-      return json({ error: `${commandType} value must be ${definition.min}-${definition.max}` }, 400, request, env);
+  let payload = null;
+  if (commandType === 'payload') {
+    payload = clean(body.payload, 200);
+    const check = validateCommandPayload(payload || '');
+    if (!check.ok) return json({ error: `Rejected command payload: ${check.error}` }, 400, request, env);
+  } else {
+    const definition = REMOTE_COMMANDS[commandType];
+    if (!definition) return json({ error: 'Unsupported command type' }, 400, request, env);
+    if (definition.min !== null) {
+      value = Number(body.value);
+      if (!Number.isFinite(value) || value < definition.min || value > definition.max) {
+        return json({ error: `${commandType} value must be ${definition.min}-${definition.max}` }, 400, request, env);
+      }
     }
   }
+
   const duplicate = await env.DB.prepare('SELECT * FROM remote_commands WHERE idempotency_key = ?')
     .bind(idempotencyKey).first();
   if (duplicate) return json({ command: duplicate, duplicate: true }, 200, request, env);
@@ -289,10 +308,10 @@ async function createRemoteCommand(request, env) {
   const expires = new Date(now.getTime() + 15_000);
   const id = crypto.randomUUID();
   await env.DB.prepare(`INSERT INTO remote_commands
-    (id, idempotency_key, device_id, command_type, command_value, requested_by,
+    (id, idempotency_key, device_id, command_type, command_value, command_payload, requested_by,
      created_at, expires_at, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued')`)
-    .bind(id, idempotencyKey, deviceId, commandType, value,
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued')`)
+    .bind(id, idempotencyKey, deviceId, commandType, value, payload,
       clean(body.requestedBy, 80, true), now.toISOString(), expires.toISOString()).run();
   const command = await env.DB.prepare('SELECT * FROM remote_commands WHERE id = ?').bind(id).first();
   return json({ command }, 201, request, env);
@@ -332,6 +351,57 @@ async function acknowledgeRemoteCommand(request, env, id) {
   if (!result.meta?.changes) return json({ error: 'Queued command not found' }, 404, request, env);
   const command = await env.DB.prepare('SELECT * FROM remote_commands WHERE id = ?').bind(id).first();
   return json({ command }, 200, request, env);
+}
+
+function clientIp(request) {
+  return request.headers.get('CF-Connecting-IP') || request.headers.get('x-forwarded-for') || 'unknown';
+}
+
+async function createPairCode(request, env) {
+  let body;
+  try { body = await request.json(); } catch (_) { return json({ error: 'Expected JSON body' }, 400, request, env); }
+  const deviceId = clean(body.deviceId, 80);
+  if (!deviceId) return json({ error: 'deviceId is required' }, 400, request, env);
+  // One active code per device: clear any previous codes.
+  await env.DB.prepare('DELETE FROM pair_codes WHERE device_id = ?').bind(deviceId).run();
+  const code = String(Math.floor(1000 + Math.random() * 9000)); // 4 digits, 1000-9999
+  const now = new Date();
+  const expires = new Date(now.getTime() + 5 * 60_000);
+  await env.DB.prepare(`INSERT INTO pair_codes (code, device_id, created_at, expires_at)
+    VALUES (?, ?, ?, ?)`).bind(code, deviceId, now.toISOString(), expires.toISOString()).run();
+  return json({ code, expiresAt: expires.toISOString() }, 201, request, env);
+}
+
+async function redeemPairCode(request, env) {
+  const ip = clientIp(request);
+  const now = new Date();
+  const windowMs = 10 * 60_000;
+  const attempt = await env.DB.prepare('SELECT * FROM pair_attempts WHERE source_ip = ?').bind(ip).first();
+  if (attempt) {
+    const fresh = now.getTime() - new Date(attempt.window_start).getTime() < windowMs;
+    if (fresh && attempt.attempts >= 5) return json({ error: 'Too many attempts, try again later' }, 429, request, env);
+    if (!fresh) await env.DB.prepare('UPDATE pair_attempts SET attempts = 0, window_start = ? WHERE source_ip = ?')
+      .bind(now.toISOString(), ip).run();
+  }
+  let body;
+  try { body = await request.json(); } catch (_) { return json({ error: 'Expected JSON body' }, 400, request, env); }
+  const code = clean(body.code, 8);
+  const row = code ? await env.DB.prepare('SELECT * FROM pair_codes WHERE code = ?').bind(code).first() : null;
+  const valid = row && !row.redeemed_at && new Date(row.expires_at).getTime() > now.getTime();
+  if (!valid) {
+    await env.DB.prepare(`INSERT INTO pair_attempts (source_ip, attempts, window_start)
+      VALUES (?, 1, ?) ON CONFLICT(source_ip) DO UPDATE SET attempts = attempts + 1`)
+      .bind(ip, now.toISOString()).run();
+    return json({ error: 'Invalid or expired code' }, 404, request, env);
+  }
+  await env.DB.prepare('UPDATE pair_codes SET redeemed_at = ? WHERE code = ?').bind(now.toISOString(), code).run();
+  await env.DB.prepare('DELETE FROM pair_attempts WHERE source_ip = ?').bind(ip).run();
+  return json({
+    deviceId: row.device_id,
+    viewerToken: env.VIEWER_TOKEN,
+    operatorToken: env.OPERATOR_TOKEN,
+    workerUrl: new URL(request.url).origin
+  }, 200, request, env);
 }
 
 async function publishSlack(env, definition, message, location) {
