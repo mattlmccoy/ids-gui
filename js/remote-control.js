@@ -3,6 +3,7 @@
 import store from './state.js';
 import { send } from './serial.js';
 import { getRemoteAlertConfig } from './notifications.js';
+import { validateCommandPayload } from './command-allowlist.js';
 
 const ENABLE_WINDOW_MS = 30 * 60 * 1000;
 const POLL_INTERVAL_MS = 1000;
@@ -74,12 +75,25 @@ async function pollCommands() {
 
 async function processCommand(config, command) {
   if (!getRemoteControlState().active) return;
-  const definition = COMMAND_MAP[command.command_type];
-  if (!definition) return rejectWithoutClaim(config, command.id, 'Command type is not allowed by this desktop');
-  const value = definition.min === undefined ? definition.value : Number(command.command_value);
-  if (definition.min !== undefined && (!Number.isFinite(value) || value < definition.min || value > definition.max)) {
-    return rejectWithoutClaim(config, command.id, 'Command value is outside the desktop safety range');
+
+  let payload = null;
+  let key = null;
+  let value = null;
+  if (command.command_type === 'payload') {
+    const check = validateCommandPayload(command.command_payload || '');
+    if (!check.ok) return rejectWithoutClaim(config, command.id, `Payload rejected: ${check.error}`);
+    payload = command.command_payload;
+    key = check.key; value = check.value;
+  } else {
+    const definition = COMMAND_MAP[command.command_type];
+    if (!definition) return rejectWithoutClaim(config, command.id, 'Command type is not allowed by this desktop');
+    value = definition.min === undefined ? definition.value : Number(command.command_value);
+    if (definition.min !== undefined && (!Number.isFinite(value) || value < definition.min || value > definition.max)) {
+      return rejectWithoutClaim(config, command.id, 'Command value is outside the desktop safety range');
+    }
+    payload = definition.payload(value); key = definition.key;
   }
+
   try {
     await deviceApi(config, `/api/v1/commands/${encodeURIComponent(command.id)}/claim`, { method: 'POST', body: '{}' });
   } catch (error) {
@@ -89,13 +103,14 @@ async function processCommand(config, command) {
   if (!getRemoteControlState().active || store.connection !== 'CONNECTED') {
     return acknowledge(config, command.id, 'rejected', 'Local remote-control window closed before execution');
   }
-  const payload = definition.payload(value);
   const written = await send(payload);
   if (!written) return acknowledge(config, command.id, 'rejected', 'Serial write failed');
-  const confirmed = await waitForReadback(definition.key, value, 4000);
+  // Reads (GET) have no single readback key to confirm.
+  if (key === 'GET') return acknowledge(config, command.id, 'executed', 'Read command sent');
+  const confirmed = await waitForReadback(key, value, 4000);
   const message = confirmed
-    ? `${definition.key} readback confirmed at ${value}`
-    : `${definition.key} command written, but readback was not confirmed within 4 seconds`;
+    ? `${key} readback confirmed at ${value}`
+    : `${key} command written, but readback was not confirmed within 4 seconds`;
   store.log(confirmed ? 'command' : 'warning', `Remote: ${message}`);
   await acknowledge(config, command.id, 'executed', message);
 }
