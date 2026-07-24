@@ -335,7 +335,7 @@ function buildHTML() {
             </div>
             <div class="alert alert-info mt-3 mb-0">
               <div class="fw-semibold"><i class="bi bi-link-45deg me-1"></i>Mirror control to a laptop</div>
-              <div class="small my-2">Pair a laptop to view and control this machine remotely — it loads the same app over the cloud relay while the desktop stays the safety authority (the 30-minute window above still applies).</div>
+              <div class="small my-2">Pair a laptop to view and control this machine remotely — it loads the same app over the cloud relay. <strong>Pairing only needs the USB controller connected</strong> (Connect on the Operation tab). The 30-minute remote-control window above is required later, only to <em>execute</em> commands from the laptop.</div>
               <div class="d-flex gap-2 align-items-center flex-wrap">
                 <button class="btn btn-sm btn-info" id="btn-pair-laptop">Pair a laptop</button>
                 <span id="pair-code-output" class="small" style="color:var(--text-muted)"></span>
@@ -420,7 +420,7 @@ function bindEvents() {
   document.getElementById('btn-pair-laptop')?.addEventListener('click', async () => {
     const out = document.getElementById('pair-code-output');
     const cfg = getRemoteAlertConfig();
-    if (store.connection !== 'CONNECTED') { out.textContent = 'Connect the controller first.'; return; }
+    if (store.connection !== 'CONNECTED') { out.textContent = 'Connect to the USB controller (APS IDS) first — click Connect on the Operation tab.'; return; }
     if (!cfg.workerUrl || !cfg.deviceToken) { out.textContent = 'Save the Worker URL + device token above first.'; return; }
     out.textContent = 'Requesting code…';
     try {
@@ -430,7 +430,9 @@ function bindEvents() {
         body: JSON.stringify({ deviceId: cfg.deviceId })
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `Pairing failed (${res.status})`);
+      if (res.status === 404) throw new Error('pairing endpoint missing — the cloud relay needs to be redeployed (wrangler deploy)');
+      if (res.status === 401) throw new Error('device token rejected by the relay — check the DEVICE_TOKEN above');
+      if (!res.ok) throw new Error(data.error || `pairing failed (${res.status})`);
       out.innerHTML = `Code: <span class="fs-4 font-monospace fw-bold">${data.code}</span> · expires in 5 min`;
     } catch (error) { out.textContent = `Could not create code: ${error.message}`; }
   });
