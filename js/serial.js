@@ -325,10 +325,20 @@ if (typeof navigator !== 'undefined' && navigator.serial?.addEventListener) {
   });
 }
 
-window.addEventListener('beforeunload', () => {
-  autoReconnect = false;
-  cancelReconnect();
-  readLoopActive = false;
-  stopPolling();
-  try { port?.close(); } catch (_) { /* ignore */ }
-});
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => {
+    autoReconnect = false;
+    cancelReconnect();
+    readLoopActive = false;
+    stopPolling();
+    try { port?.close(); } catch (_) { /* ignore */ }
+  });
+}
+
+/* Transport interface implementation for the Web Serial path (see js/transport.js). */
+export const SerialTransport = {
+  id: 'serial',
+  connect, disconnect, send,
+  isSupported: isSerialSupported,
+  getPollIntervalMs, getNominalPollIntervalMs, setPollIntervalMs,
+};
