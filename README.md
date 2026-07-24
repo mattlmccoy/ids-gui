@@ -64,6 +64,26 @@ Pushes to `main` automatically test and deploy the latest browser assets. No loc
 is required: desktop Chrome or Edge connects directly to the USB controller through Web Serial.
 See `GITHUB_PAGES.md` for setup, update, browser-storage, and troubleshooting details.
 
+## Mirror to a Laptop (remote control)
+
+A second device (laptop, tablet) can load the **same** web app and control the machine
+remotely while the desktop stays physically connected over USB. It runs over the existing
+Cloudflare Worker relay, and the desktop remains the safety authority.
+
+1. **Desktop (connected):** in **Settings → Remote Alerts**, save the Worker URL + device
+   token, then click **Pair a laptop**. A **4-digit code** appears (valid 5 minutes,
+   single-use).
+2. **Laptop:** open the same site, go to **Settings**, enter the code under
+   *Mirror control to a laptop → Connect remotely*. The app reloads into **mirror mode**
+   (a "🔗 Mirroring …" badge appears) and streams live telemetry.
+3. **Enable control:** remote commands only execute while the desktop's **30-minute remote
+   window** is enabled (Settings → *Remote control safety latch → Enable for 30 minutes*).
+   Every command is validated on both the relay and the desktop before it reaches the
+   controller; **Leave remote session** on the laptop returns it to normal.
+
+Notes: the relay never performs an emergency stop — physical controls remain the only
+e-stop. Only one machine can be mirrored per laptop at a time.
+
 ## Build Installers (macOS / Windows / Linux)
 
 ```bash
