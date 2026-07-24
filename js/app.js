@@ -5,6 +5,7 @@ import { isSerialSupported } from './serial.js';
 import { setActiveTransport, getActiveTransport } from './transport.js';
 import { createCloudTransport } from './cloud-transport.js';
 import { getMirrorSession } from './mirror-session.js';
+import { setFloatMirrorPassthrough } from './float-state.js';
 import { decodeAlarmStatus, isActiveError } from './errors.js';
 import { shouldSuppressHeaterError } from './heater-visibility.js';
 import { initDialogs } from './ui-dialogs.js';
@@ -40,6 +41,7 @@ function boot() {
   const mirrorSession = getMirrorSession();
   if (mirrorSession) {
     setActiveTransport(createCloudTransport(mirrorSession));
+    setFloatMirrorPassthrough(true); // host relays display-normalized floats; don't invert twice
   } else if (!isSerialSupported()) {
     document.querySelector('.container-fluid.mt-2').innerHTML = `
       <div class="alert alert-danger mt-4" role="alert">

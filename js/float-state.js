@@ -4,6 +4,9 @@ import store from './state.js';
 
 const WEIR_OVF_INVERT_KEY = 'ids-invert-weir-overflow';
 let weirOverflowInverted = readWeirOverflowPreference();
+// In mirror mode the host relays float values it has ALREADY display-normalized, so the
+// mirror must render them verbatim rather than applying its own inversion a second time.
+let mirrorPassthrough = false;
 
 export const FLOATS = [
   { key: 'SupplyFloat_STATE',         label: 'Supply',    color: '#4c8dff' },
@@ -44,10 +47,16 @@ export function setWeirOverflowInverted(enabled) {
   return value;
 }
 
+/** Enable on a mirror viewer so relayed (already-normalized) float values are not re-inverted. */
+export function setFloatMirrorPassthrough(enabled) {
+  mirrorPassthrough = !!enabled;
+}
+
 /** Return the UI state without changing the raw firmware value. */
 export function getFloatDisplayState(key, raw) {
   const state = normalizeBinaryState(raw);
   if (state === null) return null;
+  if (mirrorPassthrough) return state; // host already applied its display convention
   if (key === 'WeirOverflowFloat_STATE' && isWeirOverflowInverted()) return state ? 0 : 1;
   return state;
 }

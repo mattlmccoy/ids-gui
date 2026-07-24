@@ -2,7 +2,7 @@
 
 import store from './state.js';
 import { handleSimulatedCommand } from './firmware-simulator.js';
-import { shouldAutoReconnect, selectReconnectPort, nextReconnectDelayMs } from './serial-reconnect.js';
+import { shouldAutoReconnect, selectReconnectPort, nextReconnectDelayMs, isTelemetryStale, STALE_TELEMETRY_MS } from './serial-reconnect.js';
 
 const BAUD_RATE = 115200;
 const ARDUINO_VENDOR_ID = 0x2341;
@@ -20,6 +20,8 @@ let pollIntervalMs = NOMINAL_POLL_INTERVAL_MS;
 let autoReconnect = true;
 let reconnectTimer = null;
 let reconnectAttempts = 0;
+let lastFrameAt = 0;
+let staleWatchdogTimer = null;
 
 /* ---------- Brace-counting JSON frame parser ---------- */
 
@@ -107,6 +109,7 @@ async function readLoop() {
         for (const obj of frames) {
           store.setData(obj);
         }
+        if (frames.length) lastFrameAt = Date.now();
       }
     } catch (err) {
       if (readLoopActive) {
@@ -131,14 +134,24 @@ async function readLoop() {
 
 function startPolling() {
   stopPolling();
+  lastFrameAt = Date.now(); // reset the stale clock so the watchdog doesn't fire before the first frame
   send('{"GET":"ALL"}'); // immediate first poll so telemetry populates without waiting a full interval
   pollTimer = setInterval(() => {
     send('{"GET":"ALL"}');
   }, pollIntervalMs);
+  // Watchdog: a soft reset / power-cycle can leave the USB CDC port open but silent, so no
+  // 'disconnect' event or read error ever fires. If telemetry goes quiet, force a reconnect.
+  staleWatchdogTimer = setInterval(() => {
+    if (store.connection === 'CONNECTED' && isTelemetryStale(lastFrameAt, Date.now(), STALE_TELEMETRY_MS)) {
+      store.log('warning', 'No telemetry for 8 s — controller may have reset; reconnecting…');
+      disconnect('unexpected');
+    }
+  }, 2000);
 }
 
 function stopPolling() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  if (staleWatchdogTimer) { clearInterval(staleWatchdogTimer); staleWatchdogTimer = null; }
 }
 
 
@@ -194,6 +207,11 @@ async function tryReconnect() {
     writer = null;
     try { await port?.close(); } catch (_) { /* ignore */ }
     port = null;
+  }
+  // After several failed attempts the re-enumerated device may not be re-offered by the
+  // browser (a power-cycle can require re-granting the port). Nudge the user once.
+  if (reconnectAttempts === 5) {
+    store.log('warning', 'Auto-reconnect is still trying. If the controller was power-cycled, click Connect to re-grant the USB port.');
   }
   if (autoReconnect) scheduleReconnect(nextReconnectDelayMs(reconnectAttempts));
 }
