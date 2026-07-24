@@ -52,7 +52,6 @@ const VALVES = [
   { key: 'ManifoldValve2_STATE', label: 'Manifold Valve 2' },
   { key: 'DrainValve_STATE',     label: 'Drain Valve' },
   { key: 'BulkSupplyValve_STATE', label: 'Bulk Supply Valve' },
-  { key: 'BypassValve_STATE', label: 'Bypass Valve' },
   { key: 'flushValve_STATE', label: 'Flush Valve' },
 ];
 
@@ -202,20 +201,12 @@ function buildHTML() {
                 <span class="mode-ack d-none" id="ack-Drain_MODE"></span>
                 <span class="mode-autooff d-none" id="timer-Drain_MODE"></span>
               </div>
-              <span style="width:1px;background:var(--border-color)"></span>
-              <div class="d-flex gap-1">
-                <button class="btn-control btn-mode-on" id="btn-bypass-on" disabled>Bypass</button>
-                <button class="btn-control btn-mode-off" id="btn-bypass-off" disabled>OFF</button>
-                <span class="mode-ack d-none" id="ack-Bypass_MODE"></span>
-                <span class="mode-autooff d-none" id="timer-Bypass_MODE"></span>
-              </div>
             </div>
             <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap mt-3">
               <div class="mode-command-status" id="mode-command-status" role="status">Buttons reflect live controller state.</div>
               <div class="d-flex gap-2 flex-wrap"><button class="btn btn-sm btn-outline-secondary" data-experience-reveal data-show-label="Show advanced controls" data-hide-label="Hide advanced controls"></button><button class="btn btn-sm btn-outline-info" id="btn-open-system-map"><i class="bi bi-diagram-3 me-1"></i>System map & mode guide</button></div>
             </div>
             ${modeHelpHTML()}
-            <div class="alert alert-warning py-2 mt-3 mb-0 d-none" id="bypass-active-warning"><strong>Bypass is active.</strong> It can remain open during Run and has no firmware timeout.</div>
           </div>
         </div>
 
@@ -445,14 +436,6 @@ function bindEvents() {
   });
   document.getElementById('btn-drain-off').addEventListener('click', () => requestMode('Drain_MODE', 0, 'Drain stop requested'));
 
-  document.getElementById('btn-bypass-on').addEventListener('click', async () => {
-    const ok = await confirm('Open persistent bypass',
-      '<p><strong>R17 holds the bypass valve open until an explicit OFF command.</strong></p><p class="text-warning mb-0">It can coexist with Run and has no timeout. Confirm the physical bypass path and remain at the machine.</p>',
-      'Open bypass', 'btn-warning');
-    if (ok) requestMode('Bypass_MODE', 1, 'Persistent bypass requested');
-  });
-  document.getElementById('btn-bypass-off').addEventListener('click', () => requestMode('Bypass_MODE', 0, 'Bypass close requested'));
-
   const sendAllBtn = document.getElementById('btn-config-send-all');
   if (sendAllBtn) {
     sendAllBtn.addEventListener('click', async () => {
@@ -648,10 +631,8 @@ function updateDisplay(data) {
   applyModeButtons('Purge_MODE', data);
   applyModeButtons('Flush_MODE', data);
   applyModeButtons('Drain_MODE', data);
-  applyModeButtons('Bypass_MODE', data);
   applyModeButtons('Run_MODE', data);
   reconcilePendingModes(data);
-  updateModeGuide(data);
   observeRunTimer(data);
   applyModeInterlocks(data);
   applyHeaterVisibilityUI();
@@ -827,8 +808,7 @@ function updateConnectionUI(state) {
   const btns = [
     'btn-run', 'btn-stop', 'btn-all-off', 'btn-reboot',
     'btn-purge-on', 'btn-purge-off', 'btn-flush-on', 'btn-flush-off',
-    'btn-drain-on', 'btn-drain-off',
-    'btn-bypass-on', 'btn-bypass-off'
+    'btn-drain-on', 'btn-drain-off'
   ];
   btns.forEach(id => {
     const el = document.getElementById(id);
@@ -949,7 +929,7 @@ async function requestMode(key, value, message) {
 
 async function commandAllModesOff() {
   const ok = await confirm('Command all modes OFF',
-    '<p><strong>This sends OFF for Run, Purge, Flush, Drain, and Bypass.</strong></p><p class="mb-0">Stay at the machine until every controller readback confirms OFF. This is a controlled shutdown command, not an emergency stop.</p>',
+    '<p><strong>This sends OFF for Run, Purge, Flush, and Drain.</strong></p><p class="mb-0">Stay at the machine until every controller readback confirms OFF. This is a controlled shutdown command, not an emergency stop.</p>',
     'Command all OFF', 'btn-danger');
   if (!ok) return;
   cancelAllAutoOffTimers();
@@ -1064,10 +1044,6 @@ function updateCommandFeedback(key, state) {
   }
   el.textContent = state === 'pending' ? 'Sending…' : 'No response';
   el.className = `mode-ack ${state}`;
-}
-
-function updateModeGuide(data) {
-  document.getElementById('bypass-active-warning')?.classList.toggle('d-none', Number(data.Bypass_MODE) !== 1);
 }
 
 function observeRunTimer(data) {

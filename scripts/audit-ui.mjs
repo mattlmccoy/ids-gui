@@ -39,7 +39,7 @@ const commandSource = serial + operation;
 for (const command of expectedCommands) {
   if (!commandSource.includes(command)) throw new Error(`Missing firmware command: ${command}`);
 }
-for (const key of ['Run_MODE', 'Purge_MODE', 'Flush_MODE', 'Drain_MODE', 'Bypass_MODE']) {
+for (const key of ['Run_MODE', 'Purge_MODE', 'Flush_MODE', 'Drain_MODE']) {
   if (!modeControl.includes(key) || !operation.includes('requestMode')) throw new Error(`Missing shared operating-mode command path: ${key}`);
 }
 if (!operation.includes('commandAllModesOff') || !modeControl.includes('allModesOffCommands')) throw new Error('Missing verified All Modes Off control');
@@ -56,13 +56,12 @@ for (const marker of ['operation-mode-help', 'What do these modes do?', 'GUI aut
   if (!operation.includes(marker)) throw new Error(`Operation context/safeguard UI is missing ${marker}`);
 }
 if (operation.includes('kpi-error d-none')) throw new Error('Active error summary is hidden by default');
-for (const key of ['Purge_MODE', 'Drain_MODE', 'Bypass_MODE']) {
+for (const key of ['Purge_MODE', 'Drain_MODE']) {
   if (!modeControl.includes(`${key}:`) || !operation.includes(`timer-${key}`)) throw new Error(`Missing GUI auto-off assistance for ${key}`);
 }
 
 for (const stateKey of [
   'flushPump_STATE',
-  'BypassValve_STATE',
   'ManifoldValve2_STATE',
   'WeirOverflowFloat_STATE'
 ]) {

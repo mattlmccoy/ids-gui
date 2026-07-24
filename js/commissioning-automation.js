@@ -1,6 +1,6 @@
 /* Pure planning and evaluation helpers for the gated commissioning runner. */
 
-export const MODE_KEYS = ['Run_MODE', 'Purge_MODE', 'Flush_MODE', 'Drain_MODE', 'Bypass_MODE'];
+export const MODE_KEYS = ['Run_MODE', 'Purge_MODE', 'Flush_MODE', 'Drain_MODE'];
 
 export const CIRCUIT_TESTS = {
   flush: {
@@ -10,10 +10,6 @@ export const CIRCUIT_TESTS = {
   drain: {
     label: 'Drain circuit', mode: 'Drain_MODE',
     outputs: ['DrainPump_STATE', 'ManifoldValve1_STATE', 'ManifoldValve2_STATE']
-  },
-  bypass: {
-    label: 'Bypass valve', mode: 'Bypass_MODE',
-    outputs: ['BypassValve_STATE']
   }
 };
 

@@ -59,7 +59,7 @@ export const CONFIRMATIONS = {
   stop: () => confirm(
     'Stop Run Mode',
     '<p class="mb-1"><strong>This sends Run_MODE OFF and begins the R17 wind-down.</strong></p>' +
-    '<p class="text-warning mb-0">It does not turn Purge, Flush, Drain, or Bypass off. Use “All Modes Off” for a verified controlled shutdown.</p>',
+    '<p class="text-warning mb-0">It does not turn Purge, Flush, or Drain off. Use “All Modes Off” for a verified controlled shutdown.</p>',
     'Stop Run',
     'btn-warning'
   ),

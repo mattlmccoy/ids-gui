@@ -16,7 +16,7 @@ test('commands are constrained to known commissioning controls', () => {
   assert.equal(setpointCommand('Vacuum_SETPOINT', 28), '{"Vacuum_SETPOINT":"28"}');
   assert.throws(() => modeCommand('Heater_MODE', true));
   assert.throws(() => setpointCommand('Vacuum_SETPOINT', 101));
-  assert.equal(safeShutdownCommands().length, 5);
+  assert.equal(safeShutdownCommands().length, 4);
   assert.ok(safeShutdownCommands().every(command => command.includes('"0"')));
 });
 
@@ -31,5 +31,4 @@ test('readback evaluators require complete evidence', () => {
 test('guided circuit definitions bind modes to the expected readbacks', () => {
   assert.deepEqual(CIRCUIT_TESTS.flush.outputs, ['flushPump_STATE', 'flushValve_STATE']);
   assert.deepEqual(CIRCUIT_TESTS.drain.outputs, ['DrainPump_STATE', 'ManifoldValve1_STATE', 'ManifoldValve2_STATE']);
-  assert.deepEqual(CIRCUIT_TESTS.bypass.outputs, ['BypassValve_STATE']);
 });

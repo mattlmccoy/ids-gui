@@ -51,7 +51,7 @@ const PUMP_TRACES = [
 const VALVE_TRACES = [
   ['ManifoldValve1_STATE', 'Manifold Valve 1'], ['ManifoldValve2_STATE', 'Manifold Valve 2'],
   ['DrainValve_STATE', 'Drain Valve'], ['BulkSupplyValve_STATE', 'Bulk Supply Valve'],
-  ['BypassValve_STATE', 'Bypass Valve'], ['flushValve_STATE', 'Flush Valve'],
+  ['flushValve_STATE', 'Flush Valve'],
   ['ServiceInputValve_STATE', 'Service Input Valve'],
   ['serviceRecirculationValve_STATE', 'Service Recirc Valve']
 ];
