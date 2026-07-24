@@ -69,7 +69,6 @@ export function analyzeTelemetry(samples) {
   const findings = [];
   if (!samples.length) return ['No telemetry captured in this browser session.'];
   const last = samples.at(-1).values;
-  if (Number(last.Bypass_MODE) === 1) findings.push('Bypass is active and has no firmware timeout.');
   if (Number(last.Run_MODE) === 1 && Number(last.VacuumPump_STATE) !== 1) findings.push('Run is active but the vacuum pump readback is not ON.');
   if (Number(last.Drain_MODE) === 1 && !['DrainPump_STATE', 'ManifoldValve1_STATE', 'ManifoldValve2_STATE'].every(key => Number(last[key]) === 1)) {
     findings.push('Drain is active without all three expected R17 output readbacks.');

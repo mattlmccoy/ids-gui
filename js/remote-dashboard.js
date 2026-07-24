@@ -246,7 +246,7 @@ function metric(label, value) {
 }
 
 function activeMode(data) {
-  for (const [key, label] of [['Run_MODE', 'RUN'], ['Purge_MODE', 'PURGE'], ['Flush_MODE', 'FLUSH'], ['Drain_MODE', 'DRAIN'], ['Bypass_MODE', 'BYPASS']]) {
+  for (const [key, label] of [['Run_MODE', 'RUN'], ['Purge_MODE', 'PURGE'], ['Flush_MODE', 'FLUSH'], ['Drain_MODE', 'DRAIN']]) {
     if (Number(data[key]) === 1) return label;
   }
   return 'STOP';
@@ -271,7 +271,7 @@ function outputBadges(data) {
     ['VacuumPump_STATE', 'Vacuum Pump'], ['flushPump_STATE', 'Flush Pump'],
     ['ManifoldValve1_STATE', 'Manifold V1'], ['ManifoldValve2_STATE', 'Manifold V2'],
     ['DrainValve_STATE', 'Drain Valve'], ['BulkSupplyValve_STATE', 'Bulk Valve'],
-    ['BypassValve_STATE', 'Bypass Valve'], ['flushValve_STATE', 'Flush Valve']
+    ['flushValve_STATE', 'Flush Valve']
   ];
   return outputs.filter(([key]) => data[key] !== undefined).map(([key, label]) => {
     const on = Number(data[key]) === 1;

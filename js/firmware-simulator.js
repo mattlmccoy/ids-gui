@@ -44,11 +44,11 @@ export function simulatorFrame(name, tick) {
   const phase = Number(tick) || 0;
   const base = {
     SystemID: 'SIMULATOR', SoftwareRev: 'R17-SIM', AlarmStatus: 'RUN-NO_ERROR',
-    Run_MODE: '1', Purge_MODE: '0', Flush_MODE: '0', Drain_MODE: '0', Bypass_MODE: '0',
+    Run_MODE: '1', Purge_MODE: '0', Flush_MODE: '0', Drain_MODE: '0',
     Vacuum_SETPOINT: '28', Flow_SETPOINT: '50', Temperature_SETPOINT: '25', PressureMAX_SETPOINT: '20',
     FluidTemperature_STATE: (22 + Math.min(3, phase * 0.08)).toFixed(1),
     VacuumPump_STATE: '1', RecirculationPump_STATE: '1', InputPump_STATE: '1',
-    ManifoldValve1_STATE: '1', ManifoldValve2_STATE: '1', BypassValve_STATE: '0',
+    ManifoldValve1_STATE: '1', ManifoldValve2_STATE: '1',
     InletPressure_STATE: '1.80', ReturnPressure_STATE: '1.20'
   };
   if (name === 'no-response') return { ...base, Vacuum_STATE: '0.0', Pressure_STATE: '0.0' };
@@ -109,8 +109,7 @@ function applyModeOutputs(key, value, updates) {
     Run_MODE: ['VacuumPump_STATE', 'RecirculationPump_STATE', 'InputPump_STATE', 'ManifoldValve1_STATE', 'ManifoldValve2_STATE'],
     Purge_MODE: ['RecirculationPump_STATE', 'InputPump_STATE'],
     Flush_MODE: ['flushPump_STATE', 'flushValve_STATE'],
-    Drain_MODE: ['DrainPump_STATE', 'ManifoldValve1_STATE', 'ManifoldValve2_STATE'],
-    Bypass_MODE: ['BypassValve_STATE']
+    Drain_MODE: ['DrainPump_STATE', 'ManifoldValve1_STATE', 'ManifoldValve2_STATE']
   };
   for (const output of outputMap[key] || []) updates[output] = on;
 }

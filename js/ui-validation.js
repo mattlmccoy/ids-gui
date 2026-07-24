@@ -33,7 +33,7 @@ const TESTS = [
   )),
   ...[
     ['Run_MODE', 'Run / Stop'], ['Purge_MODE', 'Purge'], ['Flush_MODE', 'Flush'],
-    ['Drain_MODE', 'Drain'], ['Bypass_MODE', 'Bypass']
+    ['Drain_MODE', 'Drain']
   ].map(([key, label]) => binary(`mode-${key}`, 'Modes', label,
     key === 'Purge_MODE'
       ? 'Use the Operation tab to exercise Purge ON and OFF. The analyzer verifies both controller readbacks; confirm the machine behaved correctly.'
@@ -44,7 +44,7 @@ const TESTS = [
     ['VacuumPump_STATE', 'Vacuum pump'], ['flushPump_STATE', 'Flush pump'],
     ['ManifoldValve1_STATE', 'Manifold valve 1'], ['ManifoldValve2_STATE', 'Manifold valve 2'],
     ['DrainValve_STATE', 'Drain valve'], ['BulkSupplyValve_STATE', 'Bulk supply valve'],
-    ['BypassValve_STATE', 'Bypass valve'], ['flushValve_STATE', 'Flush valve']
+    ['flushValve_STATE', 'Flush valve']
   ].map(([key, label]) => binary(`actuator-${key}`, 'Actuators', label,
     `Exercise the related mode from Operation. The analyzer records OFF/ON readback; visually or audibly confirm ${label} physically actuates.`, key, true)),
   sensor('sensor-fluid-temp', 'Fluid temperature', 'FluidTemperature_STATE', -10, 100),
@@ -74,11 +74,6 @@ const AUTOMATED_TESTS = {
     key: 'drain', label: 'Drain circuit', chartType: 'binary',
     evidenceKeys: ['Drain_MODE', 'DrainPump_STATE', 'ManifoldValve1_STATE', 'ManifoldValve2_STATE'],
     linkedIds: ['mode-Drain_MODE', 'actuator-DrainPump_STATE', 'actuator-ManifoldValve1_STATE', 'actuator-ManifoldValve2_STATE']
-  },
-  'mode-Bypass_MODE': {
-    key: 'bypass', label: 'Bypass valve', chartType: 'binary',
-    evidenceKeys: ['Bypass_MODE', 'BypassValve_STATE'],
-    linkedIds: ['mode-Bypass_MODE', 'actuator-BypassValve_STATE']
   }
 };
 const ALERT_TEST_KEYS = {
@@ -466,7 +461,7 @@ async function startAutomation(panel, test) {
   try {
     setAutomationPhase('baseline', 'Commanding every operating mode OFF', panel);
     await safeShutdown();
-    await waitForReadback(data => binaryMatches(data, ['Run_MODE', 'Purge_MODE', 'Flush_MODE', 'Drain_MODE', 'Bypass_MODE'], false), 8000, 'all operating modes OFF');
+    await waitForReadback(data => binaryMatches(data, ['Run_MODE', 'Purge_MODE', 'Flush_MODE', 'Drain_MODE'], false), 8000, 'all operating modes OFF');
     if (definition.key === 'vacuum') await runVacuumTest(panel);
     else await runCircuitTest(CIRCUIT_TESTS[definition.key], panel);
     setAutomationPhase('analyze', 'Analyzing captured telemetry', panel);

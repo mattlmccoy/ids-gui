@@ -1,11 +1,10 @@
 /* Shared operating-mode definitions and safe command planning. */
 
-export const MODE_KEYS = ['Run_MODE', 'Purge_MODE', 'Flush_MODE', 'Drain_MODE', 'Bypass_MODE'];
+export const MODE_KEYS = ['Run_MODE', 'Purge_MODE', 'Flush_MODE', 'Drain_MODE'];
 export const MAINTENANCE_MODE_KEYS = ['Purge_MODE', 'Flush_MODE', 'Drain_MODE'];
 export const GUI_AUTO_OFF_DEFAULTS = {
   Purge_MODE: 30,
-  Drain_MODE: 60,
-  Bypass_MODE: 120
+  Drain_MODE: 60
 };
 export const GUI_AUTO_OFF_OPTIONS = [0, 15, 30, 60, 120, 300];
 
@@ -30,13 +29,6 @@ export const MODE_DEFINITIONS = {
     outputs: ['Drain pump', 'Manifold valve 1', 'Manifold valve 2'],
     use: 'Emptying the verified manifold path before service or a fluid change.',
     warning: 'The firmware commands DrainValve_STATE OFF in this mode. Verify the real hose destination before use.'
-  },
-  Bypass_MODE: {
-    label: 'Bypass', durationSeconds: null,
-    purpose: 'Hold the bypass valve open independently of Run and the other maintenance modes.',
-    outputs: ['Bypass valve'],
-    use: 'Diagnostics or a procedure that explicitly calls for the verified bypass path.',
-    warning: 'Persistent mode: it can remain active during Run and has no firmware timeout.'
   }
 };
 

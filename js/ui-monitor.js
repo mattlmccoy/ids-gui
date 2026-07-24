@@ -22,7 +22,7 @@ const CATEGORIES = [
     id: 'valves', title: 'Valves', icon: 'bi-diagram-3',
     keys: [
       'ManifoldValve1_STATE', 'ManifoldValve2_STATE', 'DrainValve_STATE',
-      'BulkSupplyValve_STATE', 'BypassValve_STATE', 'flushValve_STATE',
+      'BulkSupplyValve_STATE', 'flushValve_STATE',
       'ServiceInputValve_STATE', 'serviceRecirculationValve_STATE'
     ]
   },
@@ -62,7 +62,7 @@ const CATEGORIES = [
   },
   {
     id: 'modes', title: 'Modes', icon: 'bi-toggles',
-    keys: ['Run_MODE', 'Purge_MODE', 'Flush_MODE', 'Drain_MODE', 'Bypass_MODE', 'Service_MODE', 'AlarmStatus', 'ErrorCode_STATE']
+    keys: ['Run_MODE', 'Purge_MODE', 'Flush_MODE', 'Drain_MODE', 'Service_MODE', 'AlarmStatus', 'ErrorCode_STATE']
   },
   {
     id: 'system', title: 'System', icon: 'bi-cpu',

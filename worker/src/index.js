@@ -67,13 +67,13 @@ const EVENT_DEFINITIONS = {
 
 const TELEMETRY_KEYS = new Set([
   'SystemID', 'SoftwareRev', 'AlarmStatus', 'ErrorCode_STATE',
-  'Run_MODE', 'Purge_MODE', 'Flush_MODE', 'Drain_MODE', 'Bypass_MODE',
+  'Run_MODE', 'Purge_MODE', 'Flush_MODE', 'Drain_MODE',
   'Vacuum_STATE', 'Pressure_STATE', 'FluidTemperature_STATE',
   'MainHeaterTemperature_STATE', 'AUXHeaterTemperature_STATE',
   'InputPump_STATE', 'RecirculationPump_STATE', 'DrainPump_STATE',
   'BulkSupplyPump_STATE', 'VacuumPump_STATE', 'flushPump_STATE',
   'ManifoldValve1_STATE', 'ManifoldValve2_STATE', 'DrainValve_STATE',
-  'BulkSupplyValve_STATE', 'BypassValve_STATE', 'flushValve_STATE',
+  'BulkSupplyValve_STATE', 'flushValve_STATE',
   'SupplyFloat_STATE', 'WeirFloat_STATE', 'WasteFloat_STATE',
   'SupplyOverflowFloat_STATE', 'WeirOverflowFloat_STATE',
   'FlushFloat_STATE', 'ServiceFloat_STATE'
