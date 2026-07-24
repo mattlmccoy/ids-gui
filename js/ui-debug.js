@@ -29,6 +29,14 @@ const NODE_STATES = {
   'node-weir-float': 'WeirFloat_STATE', 'node-weir-ovf-float': 'WeirOverflowFloat_STATE'
 };
 
+// Live sensor readouts placed next to their component on the map. Keys/units match
+// the Operation dashboard tiles; digits null means show the raw value verbatim.
+const SENSOR_READOUTS = {
+  'map-read-fluid': { key: 'FluidTemperature_STATE', unit: '°C', digits: 1 },
+  'map-read-heater': { key: 'MainHeaterTemperature_STATE', unit: '°C', digits: 1 },
+  'map-read-vacuum': { key: 'Vacuum_STATE', unit: 'cmH₂O', digits: null }
+};
+
 let selectedPreview = 'live';
 let telemetryFilter = '';
 let lastDataAt = 0;
@@ -202,13 +210,16 @@ function plumbingSvg() {
     ${mapComponent('node-vacuum-pump',225,392,'pump','Vacuum pump')}
     ${mapBox(450,258,150,62,'Heater','+ thermocouple')}
     ${mapTank(390,345,'Catch pot','vac. overflow')}
-    <g class="map-component" transform="translate(555 405)"><rect width="185" height="100" rx="9"></rect><text x="92" y="34">Pressure control box</text></g>
-    ${mapFloat('node-weir-float',600,468,'WEIR')}
-    ${mapFloat('node-weir-ovf-float',690,468,'WEIR OVF')}
+    <g class="map-component" transform="translate(555 405)"><rect width="185" height="100" rx="9"></rect><text x="92" y="24">Pressure control box</text></g>
+    ${mapReadout('map-read-vacuum',647,450)}
+    ${mapFloat('node-weir-float',600,470,'WEIR')}
+    ${mapFloat('node-weir-ovf-float',690,470,'WEIR OVF')}
     ${mapComponent('node-mv1',785,430,'valve','Ball valve')}
     ${mapTee(775,545)}
     ${mapBox(1005,542,185,60,'Thermistor','fluid temp')}
+    ${mapReadout('map-read-fluid',1097,628)}
     ${mapPrinthead(1010,195)}
+    ${mapReadout('map-read-heater',545,340)}
 
     <text class="map-note" x="60" y="196">recirc</text>
     <text class="map-note" x="206" y="196">supply</text>
@@ -234,6 +245,9 @@ function mapPort(x, y) {
 }
 function mapFloat(id, x, y, label) {
   return `<g class="map-component float" id="${id}" transform="translate(${x} ${y})"><circle cx="0" cy="0" r="9"></circle><text class="map-subtext" x="0" y="25">${label}</text></g>`;
+}
+function mapReadout(id, x, y) {
+  return `<text id="${id}" x="${x}" y="${y}" text-anchor="middle" fill="#7dd3fc" font-size="13" font-weight="700">—</text>`;
 }
 
 function mapTank(x, y, label, sublabel) {
@@ -357,6 +371,21 @@ function updateSchematic(data) {
     node.classList.toggle('unknown', selectedPreview === 'live' && value === undefined);
     const state = node.querySelector('.map-state');
     if (state) state.textContent = selectedPreview !== 'live' ? (previewOn ? 'PREVIEW ON' : 'OFF') : value === undefined ? 'NO DATA' : on ? 'ON' : 'OFF';
+  }
+  for (const [id, cfg] of Object.entries(SENSOR_READOUTS)) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    const raw = data[cfg.key];
+    let text = '—';
+    if (raw !== undefined && raw !== null && raw !== '') {
+      if (cfg.digits != null) {
+        const n = parseFloat(raw);
+        text = Number.isNaN(n) ? '—' : `${n.toFixed(cfg.digits)} ${cfg.unit}`;
+      } else {
+        text = `${raw} ${cfg.unit}`;
+      }
+    }
+    el.textContent = text;
   }
   const title = document.getElementById('map-context-title');
   const detail = document.getElementById('map-context-detail');
