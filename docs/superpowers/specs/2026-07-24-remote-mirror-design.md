@@ -107,25 +107,27 @@ claim → validate (type/range/key allow-list) → `send()` on serial → `waitF
 ## 5. Pairing
 
 ### 5.1 Worker
-- `POST /api/v1/pair` (host, `DEVICE_TOKEN`): mint a **6-digit code** bound to `deviceId`,
-  TTL **5 min**, single-use. Store in new D1 table `pair_codes(code, device_id, expires_at,
+- `POST /api/v1/pair` (host, `DEVICE_TOKEN`): mint a **4-digit code** bound to `deviceId`,
+  TTL **5 min**, single-use, and **only one active code per device** (minting a new one
+  invalidates the previous). Store in new D1 table `pair_codes(code, device_id, expires_at,
   redeemed_at, attempts)`. Return `{ code, expiresAt }`.
 - `POST /api/v1/pair/redeem` (no token, **rate-limited with lockout**): body `{ code }`.
   On valid+unexpired+unredeemed: mark redeemed, return
   `{ deviceId, viewerToken, operatorToken, workerUrl }`. On invalid: increment attempts;
-  **lock out after 10 failed redeem attempts within 10 minutes** (tracked per source IP and
-  per code). 6 digits + 5-min TTL + single-use + lockout is the brute-force defense
-  (recommended over 4 digits for entropy).
+  **lock out after 5 failed redeem attempts within 10 minutes** (tracked per source IP).
+  A 4-digit code is only 10 000 combinations, so the brute-force defense is entirely the
+  short 5-min TTL + single-use + one-active-code-per-device + the strict 5-attempt lockout
+  (a guesser gets 5 tries before the code has almost certainly expired or been rotated).
 - Migration file under `worker/migrations/` for `pair_codes`.
 
 ### 5.2 Desktop UI ("Pair a laptop")
 - Button enabled only when the controller is CONNECTED (and remote alerts configured, since
-  it needs `DEVICE_TOKEN`). Calls `/pair`, shows the 6-digit code large with a live countdown
+  it needs `DEVICE_TOKEN`). Calls `/pair`, shows the 4-digit code large with a live countdown
   and a "regenerate" affordance. Lives in Settings (Remote) and/or the Operation header.
 
 ### 5.3 Laptop UI ("Connect to a machine remotely")
 - Entry on the same site (e.g., a button near the serial Connect control, or a
-  `#pair` route). Enter 6-digit code → `redeem` → persist session `{deviceId, viewerToken,
+  `#pair` route). Enter 4-digit code → `redeem` → persist session `{deviceId, viewerToken,
   operatorToken, workerUrl}` in localStorage → reload/boot into mirror mode.
 
 ## 6. App boot, mode switch, safety UX
@@ -166,7 +168,7 @@ fallback when the host disables/disconnects. `scripts/audit-ui.mjs` markers pres
 
 ## 9. Scope / non-goals (YAGNI)
 
-**In:** one laptop mirroring one desktop; full feature parity; 6-digit pairing code;
+**In:** one laptop mirroring one desktop; full feature parity; 4-digit pairing code;
 host-side safety authority; reuse of existing operator/viewer tokens gated by the code.
 
 **Out (for now):** multiple simultaneous operators; per-session minted JWT tokens;
@@ -178,7 +180,7 @@ one machine from one laptop at a time.
 - Confirm the exact `/status` response shape returns a full telemetry frame (not just alert
   state) so `store.setData` gets everything the map/tiles need; if it currently returns a
   subset, widen it (host already publishes full frames to `/telemetry`).
-- Decide code entropy: default **6 digits** (spec) unless the user prefers 4 + stricter
-  lockout.
+- Code entropy: **decided — 4 digits** for an easy type-in, compensated by 5-min TTL +
+  single-use + one-active-code-per-device + a strict 5-attempt/10-min lockout.
 - CRLF files (`ui-charts.js`, `ui-monitor.js`, `ui-dialogs.js`) edited byte-preserving if
   touched.
