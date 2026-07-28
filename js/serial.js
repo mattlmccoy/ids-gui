@@ -10,6 +10,7 @@ const BUFFER_MAX = 8192; // 8 KB overflow guard
 const NOMINAL_POLL_INTERVAL_MS = 1000;
 const POLL_INTERVAL_MIN_MS = 200;
 const POLL_INTERVAL_MAX_MS = 5000;
+const LINK_PROBE_TIMEOUT_MS = 3000;
 
 let port = null;
 let reader = null;
@@ -158,9 +159,40 @@ function stopPolling() {
 /* ---------- Auto-reconnect ---------- */
 
 function attachDisconnectListener() {
+  // A reopened port object is reused across reconnects, so guard against stacking
+  // duplicate handlers (each would fire its own disconnect on the next drop).
+  if (!port || port.__idsDisconnectBound) return;
+  port.__idsDisconnectBound = true;
   port.addEventListener('disconnect', () => {
     store.log('warning', 'USB device disconnected');
     disconnect('unexpected');
+  });
+}
+
+/** Write straight to the port, bypassing the CONNECTED gate in send(). */
+async function writeRaw(jsonStr) {
+  if (!writer) throw new Error('no writer');
+  await writer.write(new TextEncoder().encode(jsonStr + '\n'));
+}
+
+/**
+ * Prove the reopened link works in both directions before declaring CONNECTED.
+ * After a power-cycle the browser can reopen a stale port handle that accepts open()
+ * but never carries traffic — which previously surfaced as "connected but nothing works".
+ */
+function probeLink(timeoutMs) {
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = value => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      off();
+      resolve(value);
+    };
+    const off = store.on('data', () => finish(true));
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    writeRaw('{"GET":"ALL"}').catch(() => finish(false));
   });
 }
 
@@ -195,14 +227,22 @@ async function tryReconnect() {
       writer = port.writable.getWriter();
       buffer = '';
       attachDisconnectListener();
+      readLoopActive = true;
+      readLoop().catch(err => console.error('[serial] readLoop exited:', err));
+      // Only claim CONNECTED once the controller actually answers; otherwise tear the
+      // half-open port down and try again, instead of sitting in a dead "connected" state.
+      const alive = await probeLink(LINK_PROBE_TIMEOUT_MS);
+      if (!alive) throw new Error('port reopened but the controller did not respond');
       store.setConnection('CONNECTED');
       store.log('info', `Reconnected at ${BAUD_RATE} baud (attempt ${reconnectAttempts})`);
       reconnectAttempts = 0;
-      readLoop().catch(err => console.error('[serial] readLoop exited:', err));
       startPolling();
       return;
     }
   } catch (err) {
+    readLoopActive = false;
+    try { reader?.cancel(); } catch (_) { /* ignore */ }
+    reader = null;
     try { writer?.releaseLock(); } catch (_) { /* ignore */ }
     writer = null;
     try { await port?.close(); } catch (_) { /* ignore */ }

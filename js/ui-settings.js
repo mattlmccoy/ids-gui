@@ -14,6 +14,7 @@ import {
 } from './notifications.js';
 import { enableRemoteControl, disableRemoteControl, getRemoteControlState } from './remote-control.js';
 import { redeemPairCode, getMirrorSession, clearMirrorSession } from './mirror-session.js';
+import { createPairCode } from './pairing.js';
 import { isMirror } from './transport.js';
 import { getHeaterVisibility, setHeaterVisibility } from './heater-visibility.js';
 import { formatCountdown } from './mode-control.js';
@@ -335,7 +336,7 @@ function buildHTML() {
             </div>
             <div class="alert alert-info mt-3 mb-0">
               <div class="fw-semibold"><i class="bi bi-link-45deg me-1"></i>Mirror control to a laptop</div>
-              <div class="small my-2">Pair a laptop to view and control this machine remotely — it loads the same app over the cloud relay. <strong>Pairing only needs the USB controller connected</strong> (Connect on the Operation tab). The 30-minute remote-control window above is required later, only to <em>execute</em> commands from the laptop.</div>
+              <div class="small my-2">Pair a laptop to view and control this machine remotely — it loads the same app over the cloud relay. <strong>Pairing arms the 30-minute remote-control window automatically</strong>, so the paired laptop can drive the machine right away; it only needs the USB controller connected here. The same buttons are on the Operation tab.</div>
               <div class="d-flex gap-2 align-items-center flex-wrap">
                 <button class="btn btn-sm btn-info" id="btn-pair-laptop">Pair a laptop</button>
                 <span id="pair-code-output" class="small" style="color:var(--text-muted)"></span>
@@ -419,21 +420,13 @@ function bindEvents() {
   });
   document.getElementById('btn-pair-laptop')?.addEventListener('click', async () => {
     const out = document.getElementById('pair-code-output');
-    const cfg = getRemoteAlertConfig();
-    if (store.connection !== 'CONNECTED') { out.textContent = 'Connect to the USB controller (APS IDS) first — click Connect on the Operation tab.'; return; }
-    if (!cfg.workerUrl || !cfg.deviceToken) { out.textContent = 'Save the Worker URL + device token above first.'; return; }
     out.textContent = 'Requesting code…';
     try {
-      const res = await fetch(`${cfg.workerUrl}/api/v1/pair`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${cfg.deviceToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deviceId: cfg.deviceId })
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.status === 404) throw new Error('pairing endpoint missing — the cloud relay needs to be redeployed (wrangler deploy)');
-      if (res.status === 401) throw new Error('device token rejected by the relay — check the DEVICE_TOKEN above');
-      if (!res.ok) throw new Error(data.error || `pairing failed (${res.status})`);
-      out.innerHTML = `Code: <span class="fs-4 font-monospace fw-bold">${data.code}</span> · expires in 5 min`;
+      const { code, controlArmed, controlError } = await createPairCode();
+      out.innerHTML = `Code: <span class="fs-4 font-monospace fw-bold">${code}</span> · expires in 5 min` +
+        (controlArmed
+          ? ' · <span class="text-success">remote control armed for 30 minutes</span>'
+          : ` · <span class="text-warning">control not armed: ${controlError}</span>`);
     } catch (error) { out.textContent = `Could not create code: ${error.message}`; }
   });
   document.getElementById('btn-mirror-connect')?.addEventListener('click', async () => {
