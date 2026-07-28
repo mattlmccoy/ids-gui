@@ -18,6 +18,9 @@ import { downloadDiagnosticBundle } from './diagnostics.js';
 import { syncExperienceControls } from './experience-mode.js';
 import { calculateDualPressure, isDualPressureEnabled } from './pressure-sensing.js';
 import { stopFirmwareSimulator } from './firmware-simulator.js';
+import { createPairCode } from './pairing.js';
+import { redeemPairCode, getMirrorSession, clearMirrorSession } from './mirror-session.js';
+import { isMirror } from './transport.js';
 
 /* ---------- Setpoint Definitions ---------- */
 const SETPOINTS = [
@@ -159,7 +162,13 @@ function buildHTML() {
         <div class="dash-card accent-blue mb-3">
           <div class="card-header d-flex align-items-center justify-content-between">
             <span><i class="bi bi-toggles me-1"></i> System Control</span>
-            <div class="d-flex align-items-center gap-2"><span class="mini-countdown d-none" id="mode-countdown"><i class="bi bi-clock"></i><span>0:00</span></span><span class="op-badge op-badge-stop" id="op-status-badge">IDLE</span></div>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <button class="btn btn-sm btn-info" id="btn-op-pair-laptop"><i class="bi bi-link-45deg me-1"></i>Pair a laptop</button>
+              <button class="btn btn-sm btn-outline-info" id="btn-op-mirror-connect"><i class="bi bi-display me-1"></i>Control a machine</button>
+              <button class="btn btn-sm btn-outline-secondary d-none" id="btn-op-mirror-leave">Leave remote session</button>
+              <span class="small" id="op-pair-status" style="color:var(--text-muted)"></span>
+              <span class="mini-countdown d-none" id="mode-countdown"><i class="bi bi-clock"></i><span>0:00</span></span><span class="op-badge op-badge-stop" id="op-status-badge">IDLE</span>
+            </div>
           </div>
           <div class="card-body">
             <div class="d-flex flex-wrap gap-2 mb-3">
@@ -396,6 +405,42 @@ function bindEvents() {
   initAutoOffControls();
 
   document.getElementById('btn-connect').addEventListener('click', () => serialConnect());
+
+  document.getElementById('btn-op-pair-laptop')?.addEventListener('click', async () => {
+    const out = document.getElementById('op-pair-status');
+    if (!out) return;
+    out.textContent = 'Requesting code…';
+    try {
+      const { code, controlArmed, controlError } = await createPairCode();
+      out.innerHTML = `Code <span class="fs-5 font-monospace fw-bold">${code}</span> · 5 min` +
+        (controlArmed
+          ? ' · <span class="text-success">remote control armed 30 min</span>'
+          : ` · <span class="text-warning">control not armed: ${escapeHtml(controlError)}</span>`);
+    } catch (error) {
+      out.textContent = error.message;
+    }
+  });
+
+  document.getElementById('btn-op-mirror-connect')?.addEventListener('click', async () => {
+    const out = document.getElementById('op-pair-status');
+    const code = window.prompt('Enter the 4-digit code shown on the connected machine:');
+    if (!code) return;
+    out.textContent = 'Pairing…';
+    try {
+      await redeemPairCode(code.trim());
+      out.textContent = 'Paired. Loading mirror…';
+      window.location.reload();
+    } catch (error) {
+      out.textContent = `Could not connect: ${error.message}`;
+    }
+  });
+
+  document.getElementById('btn-op-mirror-leave')?.addEventListener('click', () => {
+    clearMirrorSession();
+    window.location.reload();
+  });
+
+  syncOperationMirrorUI();
   document.getElementById('btn-disconnect').addEventListener('click', () => store.simulationActive ? stopFirmwareSimulator() : serialDisconnect());
   document.getElementById('btn-open-system-map')?.addEventListener('click', () => {
     const trigger = document.getElementById('tab-debug');
@@ -824,6 +869,22 @@ function updateConnectionUI(state) {
     setModeStatusMessage('Connection lost while GUI auto-off was armed. Verify every active mode at the machine.');
     store.log('warning', 'GUI auto-off canceled by controller disconnect; local verification required');
   }
+}
+
+function escapeHtml(value) {
+  const div = document.createElement('div');
+  div.textContent = value ?? '';
+  return div.innerHTML;
+}
+
+/** On a mirror the pairing controls are inert; show the session state and a way out. */
+function syncOperationMirrorUI() {
+  const mirror = isMirror() ? getMirrorSession() : null;
+  document.getElementById('btn-op-pair-laptop')?.classList.toggle('d-none', Boolean(mirror));
+  document.getElementById('btn-op-mirror-connect')?.classList.toggle('d-none', Boolean(mirror));
+  document.getElementById('btn-op-mirror-leave')?.classList.toggle('d-none', !mirror);
+  const out = document.getElementById('op-pair-status');
+  if (out && mirror) out.textContent = 'Mirroring a remote machine';
 }
 
 function isRunModeActive(data = null) {

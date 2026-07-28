@@ -1,5 +1,7 @@
 /* ===== state.js — Singleton event bus + state store ===== */
 
+import { applyTelemetryAliases } from './telemetry-aliases.js';
+
 /**
  * Events emitted:
  *   'data'         — new firmware data frame parsed       (payload: object)
@@ -64,7 +66,7 @@ class StateStore {
 
   /** Update firmware data and emit */
   setData(obj) {
-    this.data = { ...this.data, ...obj };
+    this.data = { ...this.data, ...applyTelemetryAliases(obj) };
     this.emit('data', this.data);
 
     // Check for alarm change
@@ -119,7 +121,7 @@ class StateStore {
   }
 
   replaceData(obj = {}) {
-    this.data = { ...obj };
+    this.data = { ...applyTelemetryAliases(obj) };
     this.alarmRaw = this.data.AlarmStatus ?? this.data.ErrorCode_STATE ?? '';
     this.emit('data', this.data);
     this.emit('error', { raw: this.alarmRaw });

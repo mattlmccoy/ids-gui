@@ -4,6 +4,7 @@ import store from './state.js';
 import { send } from './serial.js';
 import { getRemoteAlertConfig } from './notifications.js';
 import { validateCommandPayload } from './command-allowlist.js';
+import { resolveRemoteControlWindow } from './remote-control-window.js';
 
 const ENABLE_WINDOW_MS = 30 * 60 * 1000;
 const POLL_INTERVAL_MS = 1000;
@@ -22,9 +23,11 @@ let pollTimer = null;
 export function initRemoteControl() {
   if (pollTimer) return;
   pollTimer = setInterval(pollCommands, POLL_INTERVAL_MS);
-  store.on('connection', state => {
-    if (state !== 'CONNECTED') disableRemoteControl('Controller disconnected');
-  });
+  // A dropped link pauses remote control (getRemoteControlState() requires CONNECTED) but
+  // must not burn the operator's window: after an auto-reconnect it resumes on its own for
+  // whatever time is left, so a power-cycle no longer leaves the laptop silently unable to
+  // send. Only a real end-of-window or an explicit disable clears it.
+  store.on('connection', () => emitState());
   window.addEventListener('beforeunload', () => clearInterval(pollTimer), { once: true });
   emitState();
 }
@@ -51,9 +54,9 @@ export function disableRemoteControl(reason = 'Disabled locally') {
 }
 
 export function getRemoteControlState() {
-  const active = enabledUntil > Date.now() && store.connection === 'CONNECTED';
-  if (!active && enabledUntil) enabledUntil = 0;
-  return { active, enabledUntil: active ? enabledUntil : 0 };
+  const resolved = resolveRemoteControlWindow(enabledUntil, Date.now(), store.connection);
+  enabledUntil = resolved.enabledUntil; // cleared only on real expiry, not on a transient drop
+  return resolved;
 }
 
 async function pollCommands() {
