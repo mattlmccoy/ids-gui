@@ -13,6 +13,13 @@ also shown in-app via the header **What's new** dropdown (see `js/changelog.js`)
 ### Changed
 - Reordered the primary tabs to match the operator workflow: **Operation**, **Trends**,
   **Event Log**, **Live I/O**, **Debug**, **Settings**, **Commissioning**, then **Ink Check**.
+- Reduced visual density while preserving the existing controls and safety gates:
+  - Simple mode uses compact KPI readings while Pro retains the tachometers.
+  - Remote pairing lives under a collapsed **Operation → Remote access** section instead of
+    being duplicated in Settings.
+  - Remote Alerts, the remote-control safety latch, and the Simple-mode plumbing schematic
+    use progressive disclosure.
+  - The primary tab strip remains ordered and becomes horizontally scrollable when necessary.
 
 ## 2026-07-23
 

@@ -44,8 +44,24 @@ for (const key of ['Run_MODE', 'Purge_MODE', 'Flush_MODE', 'Drain_MODE']) {
   if (!modeControl.includes(key) || !operation.includes('requestMode')) throw new Error(`Missing shared operating-mode command path: ${key}`);
 }
 if (!operation.includes('commandAllModesOff') || !modeControl.includes('allModesOffCommands')) throw new Error('Missing verified All Modes Off control');
-for (const marker of ['data-experience-mode-option="simple"', 'data-experience-mode-option="pro"', 'Show all settings']) {
-  if (!settings.includes(marker)) throw new Error(`Settings experience selector is missing ${marker}`);
+for (const marker of ['data-experience-mode-option="simple"', 'data-experience-mode-option="pro"']) {
+  if (!indexHtml.includes(marker)) throw new Error(`Global experience selector is missing ${marker}`);
+}
+if (!settings.includes('Show advanced settings') || settings.includes('class="experience-toolbar')) {
+  throw new Error('Settings must retain advanced access without duplicating the global experience selector');
+}
+for (const id of ['toggle-remote-alerts', 'btn-save-remote-alerts', 'btn-test-remote-alerts', 'btn-enable-remote-control', 'btn-disable-remote-control']) {
+  if (!settings.includes(`id="${id}"`)) throw new Error(`Declutter regression removed Settings control ${id}`);
+}
+if (!settings.includes('if (status.active)') || !settings.includes('safety.open = true')) {
+  throw new Error('An armed remote-control latch must remain persistently visible');
+}
+for (const id of ['btn-op-pair-laptop', 'btn-op-mirror-connect', 'btn-op-mirror-leave']) {
+  if (!operation.includes(`id="${id}"`)) throw new Error(`Declutter regression removed Operation remote control ${id}`);
+}
+if (!operation.includes('mountMirrorBanner(mirror.deviceId)')) throw new Error('Mirror session banner was lost during decluttering');
+if (!settings.includes('id="remote-alert-settings"') || !operation.includes('operation-remote-access') || !debug.includes('id="debug-plumbing-disclosure"')) {
+  throw new Error('Progressive disclosure wrappers are missing');
 }
 for (const source of [operation, settings, debug]) {
   if (!source.includes('data-experience-reveal') || !source.includes('experience-advanced')) throw new Error('Simple mode is missing an advanced-feature escape hatch');

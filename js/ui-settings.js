@@ -13,9 +13,6 @@ import {
   sendRemoteTestAlert
 } from './notifications.js';
 import { enableRemoteControl, disableRemoteControl, getRemoteControlState } from './remote-control.js';
-import { redeemPairCode, getMirrorSession, clearMirrorSession } from './mirror-session.js';
-import { createPairCode } from './pairing.js';
-import { isMirror } from './transport.js';
 import { getHeaterVisibility, setHeaterVisibility } from './heater-visibility.js';
 import { formatCountdown } from './mode-control.js';
 import { syncExperienceControls } from './experience-mode.js';
@@ -93,15 +90,8 @@ export function initSettingsTab() {
 
 function buildHTML() {
   return `
-    <div class="experience-toolbar mb-3">
-      <div><span class="experience-eyebrow">Interface</span><strong><span data-experience-current>Simple</span> dashboard</strong><small>Both views use the same controls. Simple reduces visual density; Pro opens the engineering surface.</small></div>
-      <div class="experience-actions">
-        <div class="experience-segmented" role="group" aria-label="Dashboard complexity">
-          <button type="button" data-experience-mode-option="simple" aria-pressed="true"><i class="bi bi-stars me-1"></i>Simple</button>
-          <button type="button" data-experience-mode-option="pro" aria-pressed="false"><i class="bi bi-cpu me-1"></i>Pro</button>
-        </div>
-        <button type="button" class="btn btn-sm btn-outline-secondary" data-experience-reveal data-show-label="Show all settings" data-hide-label="Hide advanced settings"></button>
-      </div>
+    <div class="settings-reveal-row d-flex justify-content-end mb-2">
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-experience-reveal data-show-label="Show advanced settings" data-hide-label="Hide advanced settings"></button>
     </div>
     <div class="row g-2">
       ${SETTINGS_GROUPS.map(group => `
@@ -247,13 +237,14 @@ function buildHTML() {
           </div>
         </div>
       </div>
-      <div class="col-xl-8 col-lg-12">
+      <div class="col-12">
         <div class="dash-card settings-group mb-3">
-          <div class="card-header d-flex justify-content-between align-items-center">
-            <span><i class="bi bi-cloud-arrow-up me-1"></i> Remote Alerts</span>
-            <span class="badge text-bg-secondary" id="remote-alert-status">Not configured</span>
-          </div>
-          <div class="card-body">
+          <details class="settings-disclosure" id="remote-alert-settings">
+            <summary class="card-header d-flex justify-content-between align-items-center">
+              <span><i class="bi bi-cloud-arrow-up me-1"></i> Remote Alerts <small class="ms-2 text-muted text-lowercase">configure delivery and remote access</small></span>
+              <span class="badge text-bg-secondary" id="remote-alert-status">Not configured</span>
+            </summary>
+            <div class="card-body">
             <div class="form-check form-switch mb-3">
               <input class="form-check-input" type="checkbox" role="switch" id="toggle-remote-alerts">
               <label class="form-check-label" for="toggle-remote-alerts">
@@ -325,32 +316,20 @@ function buildHTML() {
                 Credentials and the private ntfy topic stay in this browser and are not included in GitHub Pages.
               </span>
             </div>
-            <div class="alert alert-warning mt-3 mb-0">
-              <div class="fw-semibold"><i class="bi bi-shield-lock me-1"></i>Remote control safety latch</div>
-              <div class="small my-2">Remote commands are ignored unless an operator at this computer enables a temporary 30-minute window. Cloud Stop is not an emergency stop and must not replace local safety controls.</div>
-              <div class="d-flex gap-2 align-items-center flex-wrap">
-                <button class="btn btn-sm btn-warning" id="btn-enable-remote-control">Enable for 30 minutes</button>
-                <button class="btn btn-sm btn-outline-secondary" id="btn-disable-remote-control">Disable now</button>
+            <details class="remote-safety-disclosure mt-3">
+              <summary>
+                <span><i class="bi bi-shield-lock me-1"></i>Remote control safety latch</span>
                 <span class="badge text-bg-secondary" id="remote-control-status">Disabled</span>
-              </div>
-            </div>
-            <div class="alert alert-info mt-3 mb-0">
-              <div class="fw-semibold"><i class="bi bi-link-45deg me-1"></i>Mirror control to a laptop</div>
-              <div class="small my-2">Pair a laptop to view and control this machine remotely — it loads the same app over the cloud relay. <strong>Pairing arms the 30-minute remote-control window automatically</strong>, so the paired laptop can drive the machine right away; it only needs the USB controller connected here. The same buttons are on the Operation tab.</div>
+              </summary>
+              <div class="small text-muted mt-2">Remote commands are ignored unless an operator at this computer enables a temporary 30-minute window. Cloud Stop is not an emergency stop and must not replace local safety controls.</div>
               <div class="d-flex gap-2 align-items-center flex-wrap">
-                <button class="btn btn-sm btn-info" id="btn-pair-laptop">Pair a laptop</button>
-                <span id="pair-code-output" class="small" style="color:var(--text-muted)"></span>
+                <button class="btn btn-sm btn-warning mt-2" id="btn-enable-remote-control">Enable for 30 minutes</button>
+                <button class="btn btn-sm btn-outline-secondary mt-2" id="btn-disable-remote-control">Disable now</button>
               </div>
-              <hr class="my-2">
-              <div class="small mb-2">On the <strong>laptop</strong>: enter the 4-digit code shown on the connected desktop.</div>
-              <div class="d-flex gap-2 align-items-center flex-wrap">
-                <input class="form-control form-control-sm font-monospace" id="mirror-pair-code" inputmode="numeric" maxlength="4" style="max-width:6rem" placeholder="0000">
-                <button class="btn btn-sm btn-outline-info" id="btn-mirror-connect">Connect remotely</button>
-                <button class="btn btn-sm btn-outline-secondary d-none" id="btn-mirror-leave">Leave remote session</button>
-                <span class="small" id="mirror-connect-status" style="color:var(--text-muted)"></span>
-              </div>
+            </details>
+            <div class="small text-muted mt-3"><i class="bi bi-link-45deg me-1"></i>Laptop pairing and remote-machine connection are available under <strong>Operation → Remote access</strong>.</div>
             </div>
-          </div>
+          </details>
         </div>
       </div>
     </div>
@@ -418,33 +397,6 @@ function bindEvents() {
   document.getElementById('btn-disable-remote-control')?.addEventListener('click', () => {
     syncRemoteControlStatus(disableRemoteControl('Disabled by local operator'));
   });
-  document.getElementById('btn-pair-laptop')?.addEventListener('click', async () => {
-    const out = document.getElementById('pair-code-output');
-    out.textContent = 'Requesting code…';
-    try {
-      const { code, controlArmed, controlError } = await createPairCode();
-      out.innerHTML = `Code: <span class="fs-4 font-monospace fw-bold">${code}</span> · expires in 5 min` +
-        (controlArmed
-          ? ' · <span class="text-success">remote control armed for 30 minutes</span>'
-          : ` · <span class="text-warning">control not armed: ${controlError}</span>`);
-    } catch (error) { out.textContent = `Could not create code: ${error.message}`; }
-  });
-  document.getElementById('btn-mirror-connect')?.addEventListener('click', async () => {
-    const code = document.getElementById('mirror-pair-code')?.value.trim();
-    const status = document.getElementById('mirror-connect-status');
-    if (!/^\d{4}$/.test(code)) { status.textContent = 'Enter the 4-digit code shown on the desktop.'; return; }
-    status.textContent = 'Pairing…';
-    try {
-      await redeemPairCode(code);
-      status.textContent = 'Paired. Loading mirror…';
-      location.reload();
-    } catch (error) { status.textContent = error.message; }
-  });
-  document.getElementById('btn-mirror-leave')?.addEventListener('click', () => {
-    clearMirrorSession();
-    location.reload();
-  });
-  syncMirrorUI();
   document.getElementById('btn-save-dual-pressure')?.addEventListener('click', () => {
     const config = setPressureSensingConfig({
       enabled: document.getElementById('dual-pressure-enabled')?.checked,
@@ -624,31 +576,12 @@ function syncRemoteControlStatus(status = getRemoteControlState()) {
   if (!element) return;
   element.innerHTML = status.active ? `<i class="bi bi-clock me-1"></i>${formatCountdown(status.enabledUntil - Date.now())} remaining` : 'Disabled';
   element.className = `badge ${status.active ? 'text-bg-warning' : 'text-bg-secondary'}`;
-}
-
-function syncMirrorUI() {
-  const mirror = isMirror() ? getMirrorSession() : null;
-  document.getElementById('btn-mirror-leave')?.classList.toggle('d-none', !mirror);
-  if (!mirror) return;
-  // Paired mirror device: the pairing setup controls are inert here; show status + banner.
-  const pairBtn = document.getElementById('btn-pair-laptop');
-  const connectBtn = document.getElementById('btn-mirror-connect');
-  const codeInput = document.getElementById('mirror-pair-code');
-  if (pairBtn) pairBtn.disabled = true;
-  if (connectBtn) connectBtn.disabled = true;
-  if (codeInput) codeInput.disabled = true;
-  const status = document.getElementById('mirror-connect-status');
-  if (status) status.textContent = `Mirroring ${mirror.deviceId}`;
-  mountMirrorBanner(mirror.deviceId);
-}
-
-function mountMirrorBanner(deviceId) {
-  if (document.getElementById('mirror-banner')) return;
-  const banner = document.createElement('div');
-  banner.id = 'mirror-banner';
-  banner.textContent = `🔗 Mirroring ${deviceId} — remote`;
-  banner.style.cssText = 'position:fixed;bottom:10px;right:10px;z-index:1080;background:#0369a1;color:#fff;padding:.35rem .7rem;border-radius:.5rem;font-size:.8rem;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.4)';
-  document.body.appendChild(banner);
+  if (status.active) {
+    const remoteSettings = document.getElementById('remote-alert-settings');
+    const safety = document.querySelector('.remote-safety-disclosure');
+    if (remoteSettings) remoteSettings.open = true;
+    if (safety) safety.open = true;
+  }
 }
 
 function autoPopulate(data) {
