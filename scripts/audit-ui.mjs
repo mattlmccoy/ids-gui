@@ -110,6 +110,15 @@ for (const [tab, initializer] of [
     throw new Error(`Tab regression: ${tab} is not fully wired to ${initializer}`);
   }
 }
+const expectedTabOrder = [
+  'tab-operation', 'tab-trending', 'tab-log', 'tab-monitor',
+  'tab-debug', 'tab-settings', 'tab-validation', 'tab-ink'
+];
+const actualTabOrder = [...indexHtml.matchAll(/<button class="nav-link(?: active)?" id="(tab-[^"]+)"/g)]
+  .map(match => match[1]);
+if (actualTabOrder.join(',') !== expectedTabOrder.join(',')) {
+  throw new Error(`Unexpected primary tab order: ${actualTabOrder.join(' → ')}`);
+}
 for (const marker of ['Conceptual plumbing map', 'data-map-preview', 'debug-telemetry-body', 'Advanced raw command', 'downloadDiagnosticBundle']) {
   if (!debug.includes(marker)) throw new Error(`Debug page is missing ${marker}`);
 }

@@ -3,6 +3,13 @@
 
 export const CHANGELOG = [
   {
+    version: '2026-07-29',
+    title: 'Workflow navigation',
+    items: [
+      'Reordered the primary tabs to Operation, Trends, Event Log, Live I/O, Debug, Settings, Commissioning, and Ink Check.'
+    ]
+  },
+  {
     version: '2026-07-23',
     title: 'Reliability, commissioning, and UI fixes',
     items: [

@@ -3,6 +3,12 @@
 All notable changes to this project are documented in this file. The most recent entries are
 also shown in-app via the header **What's new** dropdown (see `js/changelog.js`).
 
+## 2026-07-29
+
+### Changed
+- Reordered the primary tabs to match the operator workflow: **Operation**, **Trends**,
+  **Event Log**, **Live I/O**, **Debug**, **Settings**, **Commissioning**, then **Ink Check**.
+
 ## 2026-07-23
 
 ### Added

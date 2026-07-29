@@ -186,8 +186,8 @@ See `CHANGELOG.md` for full release notes.
 - Lab Validation is a one-time/reservice commissioning workflow. It presents one queued test
   at a time, automatically analyzes identity, telemetry, binary readbacks, sensors, alarm and
   disconnect lifecycles, and requires explicit human confirmation for physical behavior.
-- Navigation follows the normal lifecycle: Operation, Trends, Live I/O, Ink Check, Event Log,
-  Debug, Settings, then infrequent Commissioning.
+- Navigation follows the normal lifecycle: Operation, Trends, Event Log, Live I/O, Debug,
+  Settings, then the infrequent Commissioning and Ink Check workflows.
 - `HTC`, `HTC_ERROR`, and error bit `8192` are decoded as a heater thermocouple input fault;
   live Main/Aux readings identify the affected channel and explain the 999 °C fault sentinel.
 - Settings has persistent **Main heater installed** and **AUX heater installed** switches. For
