@@ -8,6 +8,7 @@ import { confirm } from './ui-dialogs.js';
 import { syncExperienceControls } from './experience-mode.js';
 import { getFirmwareSimulatorState, startFirmwareSimulator, stopFirmwareSimulator } from './firmware-simulator.js';
 import { getFloatDisplayState } from './float-state.js';
+import { formatObservedRuntime, getPumpRuntimeSnapshot } from './component-runtime.js';
 
 // Telemetry keys that are floats: their displayed on/off must go through
 // getFloatDisplayState so the map matches the rest of the UI (e.g. Weir OVF is
@@ -57,6 +58,7 @@ export function initDebugTab() {
   store.on('connection', () => { updateLiveSummary(store.data); updateSimulatorUI(); });
   store.on('float-config', () => updateSchematic(store.data));
   store.on('simulation', updateSimulatorUI);
+  store.on('pump-runtime', renderPumpRuntime);
   store.on('log', renderEventHistory);
   store.on('command-sent', renderEventHistory);
   refreshTimer = setInterval(() => updateLiveSummary(store.data), 1000);
@@ -68,6 +70,7 @@ export function initDebugTab() {
   renderEventHistory();
   syncExperienceControls();
   updateSimulatorUI();
+  renderPumpRuntime();
 }
 
 function buildHTML() {
@@ -83,6 +86,24 @@ function buildHTML() {
       ${summaryCard('debug-firmware', 'Firmware', '—', 'bi-cpu')}
       ${summaryCard('debug-poll', 'Polling', `${getPollIntervalMs()} ms`, 'bi-arrow-repeat')}
       ${summaryCard('debug-alarm', 'Alarm', 'Unknown', 'bi-shield-check')}
+    </div>
+
+    <div class="dash-card mb-3">
+      <details class="debug-disclosure">
+        <summary class="card-header d-flex justify-content-between align-items-center gap-2">
+          <span><i class="bi bi-stopwatch me-1"></i>Observed pump usage</span>
+          <span class="small text-muted" id="pump-runtime-system">Waiting for SystemID</span>
+        </summary>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table table-sm monitor-table mb-2">
+              <thead><tr><th>Pump</th><th>Observed runtime</th><th>Observed starts</th><th>Last operated</th></tr></thead>
+              <tbody id="pump-runtime-body"></tbody>
+            </table>
+          </div>
+          <div class="small text-muted">Counts only fresh firmware ON readbacks received by this browser for this SystemID. Disconnects, closed-browser time, and short pulses between telemetry polls are not inferred. Simulator and replay data are excluded.</div>
+        </div>
+      </details>
     </div>
 
     <div class="dash-card accent-purple mb-3 experience-advanced">
@@ -423,6 +444,21 @@ function renderFindings() {
   if (!target) return;
   const findings = getDiagnosticSnapshot().findings;
   target.innerHTML = findings.map(item => `<div class="debug-finding"><i class="bi ${item.startsWith('No rule') ? 'bi-check-circle text-success' : 'bi-info-circle text-info'}"></i><span>${escapeHtml(item)}</span></div>`).join('');
+}
+
+function renderPumpRuntime() {
+  const snapshot = getPumpRuntimeSnapshot();
+  const system = document.getElementById('pump-runtime-system');
+  const body = document.getElementById('pump-runtime-body');
+  if (system) system.textContent = snapshot.systemId || 'Waiting for SystemID';
+  if (!body) return;
+  body.innerHTML = snapshot.components.map(component => `
+    <tr>
+      <td>${escapeHtml(component.label)}</td>
+      <td class="font-monospace">${escapeHtml(formatObservedRuntime(component.runtimeMs))}</td>
+      <td>${Number(component.starts || 0)}</td>
+      <td class="text-muted">${component.lastOperatedAt ? escapeHtml(new Date(component.lastOperatedAt).toLocaleString()) : 'Not observed'}</td>
+    </tr>`).join('');
 }
 
 function renderEventHistory() {

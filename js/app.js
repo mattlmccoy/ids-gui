@@ -23,6 +23,7 @@ import { initRemoteControl } from './remote-control.js';
 import { initDiagnostics } from './diagnostics.js';
 import { initExperienceMode } from './experience-mode.js';
 import { initChangelog } from './ui-changelog.js';
+import { initComponentRuntimeTracking } from './component-runtime.js';
 
 const CURRENT_WEB_BUILD = document.querySelector('meta[name="ids-build-commit"]')?.content || 'local';
 const UPDATE_CHECK_INTERVAL_MS = 60_000;
@@ -55,6 +56,7 @@ function boot() {
 
   // Initialize modules
   initDiagnostics();
+  initComponentRuntimeTracking();
   initDialogs();
   initOperationTab();
   initMonitorTab();

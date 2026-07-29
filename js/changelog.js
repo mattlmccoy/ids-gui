@@ -6,7 +6,8 @@ export const CHANGELOG = [
     version: '2026-07-29',
     title: 'Workflow navigation',
     items: [
-      'Reordered the primary tabs to Operation, Trends, Event Log, Live I/O, Debug, Settings, Commissioning, and Ink Check.'
+      'Reordered the primary tabs to Operation, Trends, Event Log, Live I/O, Debug, Settings, Commissioning, and Ink Check.',
+      'Added persistent, per-machine observed runtime and start counters for the six firmware-reported pumps. The compact table stays collapsed on Debug and never estimates through disconnects, replay, or simulation.'
     ]
   },
   {

@@ -5,6 +5,11 @@ also shown in-app via the header **What's new** dropdown (see `js/changelog.js`)
 
 ## 2026-07-29
 
+### Added
+- Persistent per-SystemID **observed pump usage** for the six firmware-reported pumps,
+  including runtime and observed start counts. The collapsed Debug table excludes simulation
+  and replay data and never infers runtime across stale telemetry or disconnects.
+
 ### Changed
 - Reordered the primary tabs to match the operator workflow: **Operation**, **Trends**,
   **Event Log**, **Live I/O**, **Debug**, **Settings**, **Commissioning**, then **Ink Check**.

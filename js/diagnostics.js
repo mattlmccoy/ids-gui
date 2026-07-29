@@ -2,6 +2,7 @@
 
 import store from './state.js';
 import { calculateDualPressure, getPressureSensingConfig } from './pressure-sensing.js';
+import { getPumpRuntimeSnapshot } from './component-runtime.js';
 
 const MAX_FRAMES = 300;
 const MAX_EVENTS = 200;
@@ -41,6 +42,7 @@ export function downloadDiagnosticBundle() {
     latestTelemetry: { ...store.data },
     dualPressure: calculateDualPressure(store.data),
     pressureSensingConfig: getPressureSensingConfig(),
+    observedPumpRuntime: getPumpRuntimeSnapshot(),
     diagnosticThresholds: DIAGNOSTIC_THRESHOLDS,
     findings: analyzeTelemetry(frames),
     events: [...events],

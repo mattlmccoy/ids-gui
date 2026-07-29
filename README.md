@@ -174,6 +174,9 @@ See `CHANGELOG.md` for full release notes.
 - A one-click diagnostic bundle exports recent telemetry and command history without remote
   alert secrets. `Flow_SETPOINT` is labeled **Recirculation Drive** because it is not measured
   flow in R17.
+- Debug includes a collapsed per-machine pump-usage table. It persists observed runtime and
+  starts from fresh firmware ON/OFF readbacks only; disconnected time, simulation, replay,
+  and pulses missed between browser polls are never presented as measured lifetime.
 - The remote dashboard now includes allowlisted, read-only live system telemetry for phones.
 - Mobile control uses a separate operator token and an expiring Worker command queue. The
   desktop must be connected and locally enabled for 30 minutes; only Run, Stop, vacuum,

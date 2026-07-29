@@ -26,6 +26,7 @@ const ink = read('js/ui-ink.js');
 const modeControl = read('js/mode-control.js');
 const experienceMode = read('js/experience-mode.js');
 const diagnostics = read('js/diagnostics.js');
+const componentRuntime = read('js/component-runtime.js');
 const pagesWorkflow = read('.github/workflows/deploy-pages.yml');
 const pagesBuilder = read('scripts/build-pages.mjs');
 const indexHtml = read('index.html');
@@ -132,6 +133,12 @@ for (const sourceMarker of ['InletPressure_STATE', 'ReturnPressure_STATE', 'Diff
   if (!(operation + charts + settings + read('js/notifications.js')).includes(sourceMarker)) throw new Error(`Dual-pressure pipeline is missing ${sourceMarker}`);
 }
 if (!diagnostics.includes("schema: 'ids-diagnostic-v2'") || !debug.includes('debug-export')) throw new Error('One-click diagnostic bundle v2 is missing');
+for (const marker of ['InputPump_STATE', 'RecirculationPump_STATE', 'VacuumPump_STATE', 'flushPump_STATE', 'maxGapMs', 'simulationActive']) {
+  if (!componentRuntime.includes(marker)) throw new Error(`Observed pump usage is missing ${marker}`);
+}
+if (!debug.includes('Observed pump usage') || !diagnostics.includes('observedPumpRuntime') || !read('js/app.js').includes('initComponentRuntimeTracking()')) {
+  throw new Error('Observed pump usage is not fully integrated');
+}
 if (operation.includes('ACK OFF') || operation.includes('ACK ON')) throw new Error('Operation page still exposes engineering ACK terminology');
 if (!ink.includes('defaultSampleVolumeUl: 1000')) throw new Error('Ink checker sample default is not 1 mL');
 if (!ink.includes('Calibration required:')) throw new Error('Ink checker calibration warning is missing');
