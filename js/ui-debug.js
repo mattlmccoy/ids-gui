@@ -61,10 +61,6 @@ export function initDebugTab() {
   store.on('pump-runtime', renderPumpRuntime);
   store.on('log', renderEventHistory);
   store.on('command-sent', renderEventHistory);
-  window.addEventListener('ids-experience-mode', event => {
-    const disclosure = document.getElementById('debug-plumbing-disclosure');
-    if (disclosure) disclosure.open = event.detail?.mode === 'pro';
-  });
   refreshTimer = setInterval(() => updateLiveSummary(store.data), 1000);
   window.addEventListener('beforeunload', () => clearInterval(refreshTimer), { once: true });
   updateLiveSummary(store.data);
@@ -124,15 +120,13 @@ function buildHTML() {
     </div>
 
     <div class="dash-card accent-cyan mb-3">
-      <details class="debug-card-disclosure" id="debug-plumbing-disclosure"${document.documentElement.dataset.experienceMode === 'pro' ? ' open' : ''}>
-        <summary class="card-header d-flex align-items-center justify-content-between gap-2">
-          <span><i class="bi bi-diagram-3 me-1"></i>Conceptual plumbing map <span class="badge text-bg-secondary ms-1">DIAGRAM-TRACED</span></span>
-          <small class="text-muted">Live and previewed fluid paths</small>
-        </summary>
-        <div class="card-body">
-        <div class="schematic-mode-picker mb-2" role="group" aria-label="Diagram mode preview">
+      <div class="card-header d-flex align-items-center justify-content-between gap-2 flex-wrap">
+        <span><i class="bi bi-diagram-3 me-1"></i>Conceptual plumbing map <span class="badge text-bg-secondary ms-1">DIAGRAM-TRACED</span></span>
+        <div class="schematic-mode-picker" role="group" aria-label="Diagram mode preview">
           ${MODE_PREVIEWS.map(mode => `<button type="button" class="btn btn-sm ${mode === 'live' ? 'btn-info' : 'btn-outline-secondary'}" data-map-preview="${mode}">${capitalize(mode)}</button>`).join('')}
         </div>
+      </div>
+      <div class="card-body">
         <div class="map-context mb-2"><span id="map-context-title">Live controller state</span><span id="map-context-detail">Layout follows the traced fluid diagram. Colored lines highlight the electronically active path for the current mode.</span></div>
         <div class="d-flex align-items-center justify-content-end gap-1 mb-2">
           <span class="small text-muted me-1">Zoom</span>
@@ -152,8 +146,7 @@ function buildHTML() {
           <summary>Assumptions and known R17 limitations</summary>
           <div class="pt-2 small text-muted">Topology matches an owner-supplied trace of the machine: ink supply/recirc through the APS box pumps (I/R/D + vacuum), an inline heater, a Xaar Aquinox recirculating printhead (2 inlets, 2 outlets converging to one), a fluid-temperature thermistor, a return tee, and the ball-valve → pressure-control-box (WEIR + WEIR OVF floats) → vacuum branch with a catch pot for overflow. Inside the APS box the vacuum is regulated by an SMC ITV2090 and the heaters switch through a ZGT-25 SSR. <strong>Manifold V2:</strong> per FIRMWARE_SPEC_R17 §4.2/§4.3 the firmware always drives manifoldValve1 and manifoldValve2 to the same value at the same time (both open in Run and Drain, both closed otherwise), so MV2 has no independent function — this build has a single ball valve, shown here tracking MV1. <strong>Flush:</strong> no dedicated flush hardware exists on this build, so the flush pump/valve outputs and Flush preview are omitted. Still lab-verification items: raw float polarity and the exact firmware key behind the ball valve.</div>
         </details>
-        </div>
-      </details>
+      </div>
     </div>
 
     <div class="row g-3 mb-3">

@@ -191,9 +191,6 @@ See `CHANGELOG.md` for full release notes.
   disconnect lifecycles, and requires explicit human confirmation for physical behavior.
 - Navigation follows the normal lifecycle: Operation, Trends, Event Log, Live I/O, Debug,
   Settings, then the infrequent Commissioning and Ink Check workflows.
-- Simple mode keeps the same commands but uses compact KPI readings and collapsed engineering,
-  remote-access, and schematic sections. Pro restores tachometers and opens the engineering
-  surface; remote pairing remains available from Operation without a duplicate Settings panel.
 - `HTC`, `HTC_ERROR`, and error bit `8192` are decoded as a heater thermocouple input fault;
   live Main/Aux readings identify the affected channel and explain the 999 °C fault sentinel.
 - Settings has persistent **Main heater installed** and **AUX heater installed** switches. For

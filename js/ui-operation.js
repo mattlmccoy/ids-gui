@@ -163,6 +163,10 @@ function buildHTML() {
           <div class="card-header d-flex align-items-center justify-content-between">
             <span><i class="bi bi-toggles me-1"></i> System Control</span>
             <div class="d-flex align-items-center gap-2 flex-wrap">
+              <button class="btn btn-sm btn-info" id="btn-op-pair-laptop"><i class="bi bi-link-45deg me-1"></i>Pair a laptop</button>
+              <button class="btn btn-sm btn-outline-info" id="btn-op-mirror-connect"><i class="bi bi-display me-1"></i>Control a machine</button>
+              <button class="btn btn-sm btn-outline-secondary d-none" id="btn-op-mirror-leave">Leave remote session</button>
+              <span class="small" id="op-pair-status" style="color:var(--text-muted)"></span>
               <span class="mini-countdown d-none" id="mode-countdown"><i class="bi bi-clock"></i><span>0:00</span></span><span class="op-badge op-badge-stop" id="op-status-badge">IDLE</span>
             </div>
           </div>
@@ -212,15 +216,6 @@ function buildHTML() {
               <div class="mode-command-status" id="mode-command-status" role="status">Buttons reflect live controller state.</div>
               <div class="d-flex gap-2 flex-wrap"><button class="btn btn-sm btn-outline-secondary" data-experience-reveal data-show-label="Show advanced controls" data-hide-label="Hide advanced controls"></button><button class="btn btn-sm btn-outline-info" id="btn-open-system-map"><i class="bi bi-diagram-3 me-1"></i>System map & mode guide</button></div>
             </div>
-            <details class="operation-remote-access mt-2">
-              <summary><i class="bi bi-broadcast-pin me-1"></i>Remote access</summary>
-              <div class="d-flex align-items-center gap-2 flex-wrap pt-2">
-                <button class="btn btn-sm btn-info" id="btn-op-pair-laptop"><i class="bi bi-link-45deg me-1"></i>Pair a laptop</button>
-                <button class="btn btn-sm btn-outline-info" id="btn-op-mirror-connect"><i class="bi bi-display me-1"></i>Control a machine</button>
-                <button class="btn btn-sm btn-outline-secondary d-none" id="btn-op-mirror-leave">Leave remote session</button>
-                <span class="small" id="op-pair-status" style="color:var(--text-muted)"></span>
-              </div>
-            </details>
             ${modeHelpHTML()}
           </div>
         </div>
@@ -890,16 +885,6 @@ function syncOperationMirrorUI() {
   document.getElementById('btn-op-mirror-leave')?.classList.toggle('d-none', !mirror);
   const out = document.getElementById('op-pair-status');
   if (out && mirror) out.textContent = 'Mirroring a remote machine';
-  if (mirror) mountMirrorBanner(mirror.deviceId);
-}
-
-function mountMirrorBanner(deviceId) {
-  if (document.getElementById('mirror-banner')) return;
-  const banner = document.createElement('div');
-  banner.id = 'mirror-banner';
-  banner.textContent = `🔗 Mirroring ${deviceId} — remote`;
-  banner.style.cssText = 'position:fixed;bottom:10px;right:10px;z-index:1080;background:#0369a1;color:#fff;padding:.35rem .7rem;border-radius:.5rem;font-size:.8rem;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.4)';
-  document.body.appendChild(banner);
 }
 
 function isRunModeActive(data = null) {
