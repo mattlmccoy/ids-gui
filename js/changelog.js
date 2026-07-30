@@ -3,6 +3,14 @@
 
 export const CHANGELOG = [
   {
+    version: '2026-07-30',
+    title: 'Computer pairing restored',
+    items: [
+      'Computer pairing is now an always-visible Remote access row on Operation, while the full pairing workflow remains available in Settings.',
+      'Deployment checks now fail if either pairing surface or its create, connect, and leave-session handlers are removed.'
+    ]
+  },
+  {
     version: '2026-07-29',
     title: 'Workflow navigation',
     items: [

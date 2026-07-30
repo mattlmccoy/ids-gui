@@ -3,6 +3,14 @@
 All notable changes to this project are documented in this file. The most recent entries are
 also shown in-app via the header **What's new** dropdown (see `js/changelog.js`).
 
+## 2026-07-30
+
+### Fixed
+- Restored computer pairing as a prominent, always-visible **Remote access** row on Operation,
+  without removing the full pairing workflow from Settings.
+- Added deployment checks for both pairing surfaces and their create, connect, and leave-session
+  handlers so a visual cleanup cannot silently remove pairing again.
+
 ## 2026-07-29
 
 ### Added

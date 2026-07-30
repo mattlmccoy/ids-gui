@@ -163,14 +163,22 @@ function buildHTML() {
           <div class="card-header d-flex align-items-center justify-content-between">
             <span><i class="bi bi-toggles me-1"></i> System Control</span>
             <div class="d-flex align-items-center gap-2 flex-wrap">
-              <button class="btn btn-sm btn-info" id="btn-op-pair-laptop"><i class="bi bi-link-45deg me-1"></i>Pair a laptop</button>
-              <button class="btn btn-sm btn-outline-info" id="btn-op-mirror-connect"><i class="bi bi-display me-1"></i>Control a machine</button>
-              <button class="btn btn-sm btn-outline-secondary d-none" id="btn-op-mirror-leave">Leave remote session</button>
-              <span class="small" id="op-pair-status" style="color:var(--text-muted)"></span>
               <span class="mini-countdown d-none" id="mode-countdown"><i class="bi bi-clock"></i><span>0:00</span></span><span class="op-badge op-badge-stop" id="op-status-badge">IDLE</span>
             </div>
           </div>
           <div class="card-body">
+            <div class="alert alert-info d-flex align-items-center justify-content-between gap-3 flex-wrap py-2 px-3 mb-3" id="operation-remote-access">
+              <div>
+                <div class="fw-semibold"><i class="bi bi-broadcast-pin me-1"></i>Remote access</div>
+                <div class="small">Pair another computer to this USB-connected machine, or enter a code to control a different machine.</div>
+              </div>
+              <div class="d-flex align-items-center gap-2 flex-wrap">
+                <button class="btn btn-sm btn-info" id="btn-op-pair-laptop"><i class="bi bi-link-45deg me-1"></i>Pair another computer</button>
+                <button class="btn btn-sm btn-outline-info" id="btn-op-mirror-connect"><i class="bi bi-display me-1"></i>Control a machine</button>
+                <button class="btn btn-sm btn-outline-secondary d-none" id="btn-op-mirror-leave">Leave remote session</button>
+                <span class="small" id="op-pair-status" style="color:var(--text-muted)" role="status"></span>
+              </div>
+            </div>
             <div class="d-flex flex-wrap gap-2 mb-3">
               <button class="btn-control btn-connect" id="btn-connect">
                 <i class="bi bi-usb-plug me-1"></i>Connect

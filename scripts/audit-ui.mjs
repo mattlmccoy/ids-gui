@@ -44,6 +44,27 @@ for (const key of ['Run_MODE', 'Purge_MODE', 'Flush_MODE', 'Drain_MODE']) {
   if (!modeControl.includes(key) || !operation.includes('requestMode')) throw new Error(`Missing shared operating-mode command path: ${key}`);
 }
 if (!operation.includes('commandAllModesOff') || !modeControl.includes('allModesOffCommands')) throw new Error('Missing verified All Modes Off control');
+for (const marker of [
+  'operation-remote-access',
+  'btn-op-pair-laptop',
+  'btn-op-mirror-connect',
+  'btn-op-mirror-leave',
+  'createPairCode()',
+  'redeemPairCode(code.trim())',
+  'clearMirrorSession()'
+]) {
+  if (!operation.includes(marker)) throw new Error(`Operation computer pairing regression: missing ${marker}`);
+}
+for (const marker of [
+  'btn-pair-laptop',
+  'mirror-pair-code',
+  'btn-mirror-connect',
+  'btn-mirror-leave',
+  'createPairCode()',
+  'redeemPairCode(code)'
+]) {
+  if (!settings.includes(marker)) throw new Error(`Settings computer pairing regression: missing ${marker}`);
+}
 for (const marker of ['data-experience-mode-option="simple"', 'data-experience-mode-option="pro"', 'Show all settings']) {
   if (!settings.includes(marker)) throw new Error(`Settings experience selector is missing ${marker}`);
 }
