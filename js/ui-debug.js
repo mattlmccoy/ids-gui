@@ -9,6 +9,7 @@ import { syncExperienceControls } from './experience-mode.js';
 import { getFirmwareSimulatorState, startFirmwareSimulator, stopFirmwareSimulator } from './firmware-simulator.js';
 import { getFloatDisplayState } from './float-state.js';
 import { formatObservedRuntime, getPumpRuntimeSnapshot } from './component-runtime.js';
+import { clearIncidentLog, downloadIncidentLog, getIncidentLog } from './incident-log.js';
 
 // Telemetry keys that are floats: their displayed on/off must go through
 // getFloatDisplayState so the map matches the rest of the UI (e.g. Weir OVF is
@@ -61,6 +62,7 @@ export function initDebugTab() {
   store.on('pump-runtime', renderPumpRuntime);
   store.on('log', renderEventHistory);
   store.on('command-sent', renderEventHistory);
+  window.addEventListener('ids-incident-recorded', renderIncidentHistory);
   refreshTimer = setInterval(() => updateLiveSummary(store.data), 1000);
   window.addEventListener('beforeunload', () => clearInterval(refreshTimer), { once: true });
   updateLiveSummary(store.data);
@@ -68,6 +70,7 @@ export function initDebugTab() {
   applyMapZoom();
   renderTelemetry();
   renderEventHistory();
+  renderIncidentHistory();
   syncExperienceControls();
   updateSimulatorUI();
   renderPumpRuntime();
@@ -86,6 +89,30 @@ function buildHTML() {
       ${summaryCard('debug-firmware', 'Firmware', '—', 'bi-cpu')}
       ${summaryCard('debug-poll', 'Polling', `${getPollIntervalMs()} ms`, 'bi-arrow-repeat')}
       ${summaryCard('debug-alarm', 'Alarm', 'Unknown', 'bi-shield-check')}
+    </div>
+
+    <div class="dash-card accent-amber mb-3">
+      <details class="debug-disclosure" id="system-incident-disclosure">
+        <summary class="card-header d-flex justify-content-between align-items-center gap-2">
+          <span><i class="bi bi-pc-display-horizontal me-1"></i>System & USB incident log</span>
+          <span class="badge text-bg-secondary" id="system-incident-count">0 saved</span>
+        </summary>
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2">
+            <div class="small text-muted">Persists across browser and computer restarts. A sudden power loss is inferred on the next launch from the last 15-second heartbeat; USB removal, stale telemetry, browser hiding/freezing, reconnect attempts, and normal page exits are recorded directly.</div>
+            <div class="d-flex gap-2">
+              <button class="btn btn-sm btn-outline-primary" id="system-incident-export"><i class="bi bi-download me-1"></i>Export JSON</button>
+              <button class="btn btn-sm btn-outline-danger" id="system-incident-clear"><i class="bi bi-trash me-1"></i>Clear</button>
+            </div>
+          </div>
+          <div class="table-responsive" style="max-height:320px;overflow-y:auto">
+            <table class="table table-sm monitor-table mb-0">
+              <thead class="sticky-top"><tr><th>Time</th><th>Type</th><th>What happened</th><th>Context</th></tr></thead>
+              <tbody id="system-incident-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </details>
     </div>
 
     <div class="dash-card mb-3">
@@ -309,6 +336,13 @@ function bindEvents(panel) {
     }
   });
   document.getElementById('debug-export')?.addEventListener('click', downloadDiagnosticBundle);
+  document.getElementById('system-incident-export')?.addEventListener('click', () => downloadIncidentLog());
+  document.getElementById('system-incident-clear')?.addEventListener('click', async () => {
+    const approved = await confirm('Clear persistent incident log?', '<p>This permanently clears the locally saved browser, USB, shutdown, and reconnect history on this computer.</p>', 'Clear log', 'btn-danger');
+    if (!approved) return;
+    clearIncidentLog();
+    renderIncidentHistory();
+  });
   document.getElementById('debug-filter')?.addEventListener('input', event => {
     telemetryFilter = event.target.value.trim().toLowerCase();
     renderTelemetry();
@@ -466,6 +500,20 @@ function renderEventHistory() {
   if (!target) return;
   const events = getDiagnosticSnapshot().events.slice(-60).reverse();
   target.innerHTML = events.length ? events.map(event => `<div class="debug-event"><time>${escapeHtml(new Date(event.at).toLocaleTimeString())}</time><span class="debug-event-type">${escapeHtml(event.type || event.severity || 'event')}</span><code>${escapeHtml(event.command || event.message || event.state || '')}</code></div>`).join('') : '<div class="text-muted small p-3">No events captured in this session.</div>';
+}
+
+function renderIncidentHistory() {
+  const body = document.getElementById('system-incident-body');
+  const count = document.getElementById('system-incident-count');
+  const incidents = getIncidentLog();
+  if (count) count.textContent = `${incidents.length} saved`;
+  if (!body) return;
+  const visible = incidents.slice(-100).reverse();
+  body.innerHTML = visible.length ? visible.map(incident => {
+    const detail = Object.entries(incident.details || {}).map(([key, value]) => `${key}: ${value}`).join(' · ');
+    const severity = incident.severity === 'error' ? 'text-danger' : incident.severity === 'warning' ? 'text-warning' : 'text-muted';
+    return `<tr><td class="text-nowrap">${escapeHtml(new Date(incident.at).toLocaleString())}</td><td class="font-monospace ${severity}">${escapeHtml(incident.type)}</td><td>${escapeHtml(incident.message)}</td><td class="small text-muted">${escapeHtml(detail)}</td></tr>`;
+  }).join('') : '<tr><td colspan="4" class="text-muted text-center py-3">No persistent incidents recorded yet.</td></tr>';
 }
 
 function setText(id, value) { const element = document.getElementById(id); if (element) element.textContent = value; }

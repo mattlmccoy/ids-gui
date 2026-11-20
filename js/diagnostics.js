@@ -3,6 +3,7 @@
 import store from './state.js';
 import { calculateDualPressure, getPressureSensingConfig } from './pressure-sensing.js';
 import { getPumpRuntimeSnapshot } from './component-runtime.js';
+import { getIncidentLog } from './incident-log.js';
 
 const MAX_FRAMES = 300;
 const MAX_EVENTS = 200;
@@ -46,8 +47,9 @@ export function downloadDiagnosticBundle() {
     diagnosticThresholds: DIAGNOSTIC_THRESHOLDS,
     findings: analyzeTelemetry(frames),
     events: [...events],
+    persistentSystemIncidents: getIncidentLog(),
     telemetry: [...frames],
-    note: 'Remote relay tokens, ntfy topics, and browser storage are intentionally excluded.'
+    note: 'Remote relay tokens and ntfy topics are intentionally excluded. Persistent system/USB incidents are included for shutdown diagnosis.'
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);

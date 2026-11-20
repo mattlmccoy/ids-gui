@@ -3,6 +3,14 @@
 
 export const CHANGELOG = [
   {
+    version: '2026-11-19',
+    title: 'Persistent shutdown and USB incident history',
+    items: [
+      'Added a durable System & USB incident log on Debug that survives browser and PC restarts and can be exported for IT.',
+      'Records USB removal/return, stale telemetry, serial errors, reconnect attempts, page hide/freeze/exit, long execution gaps, and an inferred unclean shutdown using a 15-second heartbeat.'
+    ]
+  },
+  {
     version: '2026-07-30',
     title: 'Computer pairing restored',
     items: [

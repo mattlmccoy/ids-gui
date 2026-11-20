@@ -27,6 +27,7 @@ const modeControl = read('js/mode-control.js');
 const experienceMode = read('js/experience-mode.js');
 const diagnostics = read('js/diagnostics.js');
 const componentRuntime = read('js/component-runtime.js');
+const incidentLog = read('js/incident-log.js');
 const pagesWorkflow = read('.github/workflows/deploy-pages.yml');
 const pagesBuilder = read('scripts/build-pages.mjs');
 const indexHtml = read('index.html');
@@ -159,6 +160,12 @@ for (const marker of ['InputPump_STATE', 'RecirculationPump_STATE', 'VacuumPump_
 }
 if (!debug.includes('Observed pump usage') || !diagnostics.includes('observedPumpRuntime') || !read('js/app.js').includes('initComponentRuntimeTracking()')) {
   throw new Error('Observed pump usage is not fully integrated');
+}
+for (const marker of ['unclean-session-end', 'execution-gap', 'usb-disconnected', 'telemetry-stale', 'reconnect-failed', 'page-freeze']) {
+  if (!(incidentLog + serial).includes(marker)) throw new Error(`Persistent system incident logging is missing ${marker}`);
+}
+if (!read('js/app.js').includes('initIncidentLog(') || !debug.includes('System & USB incident log') || !diagnostics.includes('persistentSystemIncidents')) {
+  throw new Error('Persistent system/USB incident log is not fully integrated');
 }
 if (operation.includes('ACK OFF') || operation.includes('ACK ON')) throw new Error('Operation page still exposes engineering ACK terminology');
 if (!ink.includes('defaultSampleVolumeUl: 1000')) throw new Error('Ink checker sample default is not 1 mL');

@@ -3,6 +3,7 @@
 import store from './state.js';
 import { handleSimulatedCommand } from './firmware-simulator.js';
 import { shouldAutoReconnect, selectReconnectPort, nextReconnectDelayMs, isTelemetryStale, STALE_TELEMETRY_MS } from './serial-reconnect.js';
+import { recordIncident } from './incident-log.js';
 
 const BAUD_RATE = 115200;
 const ARDUINO_VENDOR_ID = 0x2341;
@@ -116,6 +117,7 @@ async function readLoop() {
       if (readLoopActive) {
         console.error('[serial] Read error:', err);
         store.log('error', `Serial read error: ${err.message}`);
+        recordIncident('serial-read-error', 'error', `Serial read failed: ${err.message}`, errorDetails(err));
         store.setConnection('ERROR');
       }
     } finally {
@@ -125,6 +127,10 @@ async function readLoop() {
     // If we get here and readLoop is still active, the stream ended unexpectedly
     if (readLoopActive) {
       store.log('warning', 'Serial stream ended — device may have disconnected');
+      recordIncident('serial-stream-ended', 'warning', 'Serial stream ended unexpectedly.', {
+        visibility: pageVisibility(),
+        port: portDescription(port)
+      });
       await disconnect('unexpected');
       break;
     }
@@ -145,6 +151,11 @@ function startPolling() {
   staleWatchdogTimer = setInterval(() => {
     if (store.connection === 'CONNECTED' && isTelemetryStale(lastFrameAt, Date.now(), STALE_TELEMETRY_MS)) {
       store.log('warning', 'No telemetry for 8 s — controller may have reset; reconnecting…');
+      recordIncident('telemetry-stale', 'warning', 'No valid telemetry frame arrived for 8 seconds; reconnect requested.', {
+        lastFrameAgeMs: Date.now() - lastFrameAt,
+        visibility: pageVisibility(),
+        port: portDescription(port)
+      });
       disconnect('unexpected');
     }
   }, 2000);
@@ -165,6 +176,10 @@ function attachDisconnectListener() {
   port.__idsDisconnectBound = true;
   port.addEventListener('disconnect', () => {
     store.log('warning', 'USB device disconnected');
+    recordIncident('usb-disconnected', 'error', 'The browser reported that the USB serial device was physically/logically disconnected.', {
+      visibility: pageVisibility(),
+      port: portDescription(port)
+    });
     disconnect('unexpected');
   });
 }
@@ -205,6 +220,7 @@ function beginAutoReconnect() {
   if (store.connection !== 'RECONNECTING') {
     store.setConnection('RECONNECTING');
     store.log('info', 'Controller lost — attempting to reconnect (telemetry only)…');
+    recordIncident('reconnect-started', 'warning', 'Automatic serial reconnection started.', { visibility: pageVisibility() });
   }
   if (reconnectTimer) return; // an attempt is already scheduled
   scheduleReconnect(nextReconnectDelayMs(reconnectAttempts));
@@ -218,9 +234,14 @@ async function tryReconnect() {
   reconnectTimer = null;
   if (!autoReconnect) { cancelReconnect(); return; }
   reconnectAttempts += 1;
+  recordIncident('reconnect-attempt', 'info', `Serial reconnect attempt ${reconnectAttempts}.`, { visibility: pageVisibility() });
   try {
     const ports = await navigator.serial.getPorts();
     const target = selectReconnectPort(ports, ARDUINO_VENDOR_ID);
+    recordIncident('reconnect-ports', 'info', `Reconnect can see ${ports.length} previously authorized serial port(s).`, {
+      portCount: ports.length,
+      selectedPort: portDescription(target)
+    });
     if (target) {
       port = target;
       await port.open({ baudRate: BAUD_RATE });
@@ -235,11 +256,20 @@ async function tryReconnect() {
       if (!alive) throw new Error('port reopened but the controller did not respond');
       store.setConnection('CONNECTED');
       store.log('info', `Reconnected at ${BAUD_RATE} baud (attempt ${reconnectAttempts})`);
+      recordIncident('reconnect-success', 'info', `Serial reconnection succeeded on attempt ${reconnectAttempts}.`, {
+        port: portDescription(port),
+        visibility: pageVisibility()
+      });
       reconnectAttempts = 0;
       startPolling();
       return;
     }
   } catch (err) {
+    recordIncident('reconnect-failed', 'warning', `Serial reconnect attempt ${reconnectAttempts} failed: ${err.message}`, {
+      ...errorDetails(err),
+      visibility: pageVisibility(),
+      port: portDescription(port)
+    });
     readLoopActive = false;
     try { reader?.cancel(); } catch (_) { /* ignore */ }
     reader = null;
@@ -265,17 +295,20 @@ export async function connect() {
   cancelReconnect();
   store.setConnection('CONNECTING');
   store.log('info', 'Requesting serial port...');
+  recordIncident('serial-request', 'info', 'Operator requested a serial connection.', { visibility: pageVisibility() });
 
   try {
     port = await navigator.serial.requestPort({
       filters: [{ usbVendorId: ARDUINO_VENDOR_ID }]
     });
+    recordIncident('serial-port-selected', 'info', 'A serial device was selected.', { port: portDescription(port) });
 
     await port.open({ baudRate: BAUD_RATE });
     writer = port.writable.getWriter();
 
     store.setConnection('CONNECTED');
     store.log('info', `Connected at ${BAUD_RATE} baud`);
+    recordIncident('serial-connected', 'info', `Serial port opened at ${BAUD_RATE} baud.`, { port: portDescription(port) });
 
     buffer = ''; // reset parser buffer on new connection
     readLoop().catch(err => console.error('[serial] readLoop exited:', err));
@@ -286,12 +319,23 @@ export async function connect() {
   } catch (err) {
     console.error('[serial] Connect error:', err);
     store.log('error', `Connection failed: ${err.message}`);
+    recordIncident('serial-connect-failed', 'error', `Serial connection failed: ${err.message}`, {
+      ...errorDetails(err),
+      port: portDescription(port),
+      visibility: pageVisibility()
+    });
     store.setConnection('DISCONNECTED');
     port = null;
   }
 }
 
 export async function disconnect(reason = 'manual') {
+  recordIncident('serial-disconnect', reason === 'manual' ? 'info' : 'warning', `Serial disconnect cleanup started (${reason}).`, {
+    reason,
+    connection: store.connection,
+    visibility: pageVisibility(),
+    port: portDescription(port)
+  });
   readLoopActive = false;
   stopPolling();
 
@@ -344,6 +388,7 @@ export async function send(jsonStr) {
   } catch (err) {
     console.error('[serial] Send error:', err);
     store.log('error', `Send error: ${err.message}`);
+    recordIncident('serial-write-error', 'error', `Serial write failed: ${err.message}`, errorDetails(err));
     return false;
   }
 }
@@ -375,13 +420,34 @@ export function setPollIntervalMs(ms) {
 // Cleanup on page unload
 // Reconnect immediately when a previously-granted device re-appears on the USB bus.
 if (typeof navigator !== 'undefined' && navigator.serial?.addEventListener) {
-  navigator.serial.addEventListener('connect', () => {
+  navigator.serial.addEventListener('connect', event => {
+    recordIncident('usb-connected', 'info', 'The browser reported that a serial USB device appeared.', {
+      port: portDescription(event.target),
+      connection: store.connection,
+      visibility: pageVisibility()
+    });
     if (store.connection === 'RECONNECTING' && autoReconnect) {
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
       tryReconnect();
     }
   });
 }
+
+function portDescription(target) {
+  if (!target) return 'none';
+  try {
+    const info = target.getInfo?.() || {};
+    const vid = Number.isFinite(info.usbVendorId) ? `0x${info.usbVendorId.toString(16).padStart(4, '0')}` : 'unknown';
+    const pid = Number.isFinite(info.usbProductId) ? `0x${info.usbProductId.toString(16).padStart(4, '0')}` : 'unknown';
+    return `VID ${vid}, PID ${pid}, attached ${typeof target.connected === 'boolean' ? target.connected : 'unknown'}`;
+  } catch (_) { return 'unavailable'; }
+}
+
+function errorDetails(error) {
+  return { errorName: error?.name || 'Error', errorMessage: error?.message || String(error || 'unknown') };
+}
+
+function pageVisibility() { return typeof document !== 'undefined' ? document.visibilityState : 'unknown'; }
 
 if (typeof window !== 'undefined') {
   window.addEventListener('beforeunload', () => {

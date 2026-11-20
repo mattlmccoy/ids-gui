@@ -3,6 +3,18 @@
 All notable changes to this project are documented in this file. The most recent entries are
 also shown in-app via the header **What's new** dropdown (see `js/changelog.js`).
 
+## 2026-11-19
+
+### Added
+- Persistent **System & USB incident log** on Debug, retained in browser storage across restarts
+  and exportable as JSON for IT diagnosis.
+- A 15-second durable heartbeat that allows the next launch to identify a previous session that
+  ended without a normal page exit. The log reports the last heartbeat, last telemetry time,
+  connection state, and page visibility without claiming that software can directly observe a
+  power loss after power has already been removed.
+- Detailed USB removal/return, stale-telemetry, serial read/write failure, reconnect-attempt,
+  browser hide/freeze/resume, two-minute-or-longer execution gaps, and normal page-exit records.
+
 ## 2026-07-30
 
 ### Fixed
